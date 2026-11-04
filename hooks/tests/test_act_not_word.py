@@ -7,7 +7,8 @@ proves nothing — a check that stopped matching would satisfy every allow-row �
 every section's true positives run in the same fixture and the same cwd.
 
     KL-FILE    a glob the shell never expands is not a read of what it would match
-    KL-VAULT   a `--raw` URL reads what its PATH names; its query string is data
+    KL-VAULT   a `--raw` URL reads what its PATH names; its query string is data,
+               and a variable the same command bound to a literal is that literal
     KL-SEEN    a value spelled as a variable NAME, or a documentation placeholder,
                is not a credential in output — and a postgres URL with a real
                password still is
@@ -88,6 +89,59 @@ VAULT_RAW_STILL_DENIES = [
     "kubectl get secret db -o yaml",
 ]
 
+# A variable bound to a literal EARLIER IN THE SAME command is that literal. The
+# first three are the shapes real sessions were refused on: a Loki proxy prefix
+# held in `$P` or `$L`, then `--raw "$P/labels"`.
+_LOKI = ("/api/v1/namespaces/porter-agent-system/services/porter-agent-loki:3100"
+         "/proxy/loki/api/v1")
+
+VAULT_RAW_BOUND_PASSES = [
+    'P=%s; kubectl get --raw "$P/labels" > o.json 2>&1; head -c 600 o.json' % _LOKI,
+    ("kubectl -n porter-agent-system get configmap loki-runtime -o jsonpath='{.data}';"
+     ' echo; L=%s; kubectl get --raw "$L/labels" 2>&1 | head -c 600; echo;'
+     ' kubectl get --raw "$L/label/app/values" 2>&1 | head -c 400') % _LOKI,
+    ('kubectl get svc -n porter-agent-system; kubectl get --raw "%s/labels" 2>&1;'
+     ' kubectl get --raw "%s/label/pod/values?start=$(python3 -c \'import time;'
+     'print(int(time.time()*1e9))\')"') % (_LOKI, _LOKI),
+    'export P="%s"; kubectl get --raw "${P}/query_range?query=x"' % _LOKI,
+    'cd /tmp && export KUBECONFIG=/tmp/kc; P=%s; kubectl get --raw "$P/labels"' % _LOKI,
+    "T=pod; kubectl get $T web -o yaml",
+    "P=%s; kubectl get --raw ${P}/labels" % _LOKI,
+]
+
+# Every way the binding is not provably the value the shell expands, and every
+# binding whose value IS a Secret read.
+VAULT_RAW_BOUND_STILL_DENIES = [
+    'P=/api/v1/namespaces/default/secrets; kubectl get --raw "$P/db"',
+    'export P="/api/v1/namespaces/default/secrets"; kubectl get --raw "${P}"',
+    "T=secret; kubectl get $T db -o yaml",
+    # the use comes before the binding, so it expands whatever was inherited
+    'kubectl get --raw "$P/labels"; P=%s' % _LOKI,
+    # a second binding site, of any spelling
+    'P=%s; read P; kubectl get --raw "$P/x"' % _LOKI,
+    'P=%s; P+=x; kubectl get --raw "$P/x"' % _LOKI,
+    'P=%s; printf -v P %%s /api/v1/secrets; kubectl get --raw "$P"' % _LOKI,
+    # the binding may not run, or runs in a subshell that does not return it
+    'false && P=%s; kubectl get --raw "$P/labels"' % _LOKI,
+    'P=%s | true; kubectl get --raw "$P/labels"' % _LOKI,
+    '(P=%s); kubectl get --raw "$P/labels"' % _LOKI,
+    'P=%s & kubectl get --raw "$P/labels"' % _LOKI,
+    # a prefix assignment is not visible to the words of its own command
+    'P=%s kubectl get --raw "$P/labels"' % _LOKI,
+    # the value is not a literal
+    'P=$(cat p.txt); kubectl get --raw "$P/labels"',
+    'P="$BASE/x"; kubectl get --raw "$P/labels"',
+    "P=/api/v1/*/x; kubectl get --raw $P/labels",
+    # an expansion operator decides the value at run time
+    'P=%s; kubectl get --raw "${P:-/api/v1/secrets}/x"' % _LOKI,
+    "P=%s; kubectl get --raw ${P:-/api/v1/secrets}/x" % _LOKI,
+    # a construct that can rebind or scope it
+    'for P in %s; do kubectl get --raw "$P/labels"; done' % _LOKI,
+    'P=%s; eval "P=/api/v1/namespaces/default/secrets"; kubectl get --raw "$P/db"' % _LOKI,
+    'P=%s; source f; kubectl get --raw "$P/x"' % _LOKI,
+    'P=%s; f() { P=/api/v1/secrets; }; f; kubectl get --raw "$P/x"' % _LOKI,
+]
+
 
 # ── KL-SEEN ──────────────────────────────────────────────────────────────────
 
@@ -139,6 +193,7 @@ def _post(output, root):
 
 EXPECTED_CHECKS = (len(FILE_QUOTED_GLOB_PASSES) + len(FILE_GLOB_STILL_DENIES)
                    + len(VAULT_RAW_PASSES) + len(VAULT_RAW_STILL_DENIES)
+                   + len(VAULT_RAW_BOUND_PASSES) + len(VAULT_RAW_BOUND_STILL_DENIES)
                    + len(SEEN_PASSES) + len(SEEN_STILL_WARNS)
                    # the fixture control
                    + 1
@@ -168,6 +223,14 @@ def run():
                 drive(bash(cmd)).kind, "silent")
     for cmd in VAULT_RAW_STILL_DENIES:
         s.check("KL-VAULT still denies: %s" % cmd[:60],
+                drive(bash(cmd)).kind, "deny")
+    # Labelled by position: these share a 90-character prefix, so a label cut
+    # from the command would print the same text for every row.
+    for i, cmd in enumerate(VAULT_RAW_BOUND_PASSES):
+        s.check("KL-VAULT passes a variable bound to a literal non-Secret path: row %d" % i,
+                drive(bash(cmd)).kind, "silent")
+    for i, cmd in enumerate(VAULT_RAW_BOUND_STILL_DENIES):
+        s.check("KL-VAULT still denies a binding it cannot prove, or that IS a Secret: row %d" % i,
                 drive(bash(cmd)).kind, "deny")
 
     # Labelled by position, never by content: a failure line prints its label,

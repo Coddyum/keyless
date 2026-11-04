@@ -29,6 +29,12 @@ as JSON, `.data` included. A raw path naming `/secrets` — or one that is not a
 literal — is read as a Secret read for the same reason. The PATH is the part
 before the query string; see `_raw_path`.
 
+A variable the SAME command bound to a literal before this call is not decided at
+run time: `P=<proxy prefix>; kubectl get --raw "$P/labels"` is the literal path.
+`vaultscan._kubectl_acts` substitutes those before any of the above runs, and
+`bindings.py` owns which bindings are provable — for a type word and a `--raw`
+path alike, so `T=secret; kubectl get $T db -o yaml` resolves to the refusal.
+
 `describe` is deliberately absent: it prints each key's SIZE and never its value.
 `get all` is literal and never includes Secrets — the `all` category does not
 contain them — so it stays open.
