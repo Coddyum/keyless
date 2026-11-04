@@ -1139,5 +1139,33 @@
   "file": "keyless_hooks/fingerprint.py",
   "find": "|(?-i:\\[[A-Z][A-Z0-9 _-]*\\]))$\")",
   "replace": "|\\[[A-Z][A-Z0-9 _-]*\\])$\")"
+ },
+ {
+  "id": "KV-bound-literal-unresolved",
+  "why": "KL-VAULT: a variable bound to a literal earlier in the same command is left a variable, so `P=<loki proxy>; kubectl get --raw \"$P/labels\"` is refused as an unprovable Secret read again.",
+  "file": "keyless_hooks/vaultscan.py",
+  "find": "            rest = resolve(rest, bindings, start)\n",
+  "replace": "            rest = rest\n"
+ },
+ {
+  "id": "KV-bound-conditional-assignment-trusted",
+  "why": "KL-VAULT: an assignment after `&&`, in a pipeline or backgrounded may never bind the current shell, and is trusted anyway — the inherited value reaches `--raw` unjudged.",
+  "file": "keyless_hooks/bindings.py",
+  "find": "        unconditional = (_left_separator(view, start) in (\"\", \";\", \"\\n\")\n                         and _right_separator(view, end) in (\"\", \";\", \"\\n\", \"&&\", \"||\"))\n",
+  "replace": "        unconditional = True\n"
+ },
+ {
+  "id": "KV-bound-rebinding-ignored",
+  "why": "KL-VAULT: a second spelling that rebinds the name (`P+=x`, a prefix assignment `P=x cmd`) is ignored, so the first literal is trusted over what the shell expands.",
+  "file": "keyless_hooks/bindings.py",
+  "find": "        if _only_reads_elsewhere(text, name, name_at):\n",
+  "replace": "        if True:\n"
+ },
+ {
+  "id": "KV-bound-use-before-assignment",
+  "why": "KL-VAULT: a binding is applied to a statement that runs BEFORE it, which expands whatever the environment held.",
+  "file": "keyless_hooks/bindings.py",
+  "find": "if end <= before}",
+  "replace": "if True}"
  }
 ]

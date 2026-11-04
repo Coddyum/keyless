@@ -9,10 +9,12 @@ live here for the same reason: a gate that disagreed with its sibling about what
 `--help` means would refuse a manual page one of them had already cleared.
 """
 
+from .bindings import literal_bindings, resolve
 from .executed import command_texts
 from .kubectl import (HEADS as KUBECTL_HEADS, kubectl_args, kubectl_path,
                       opaque_substitutions)
-from .shellview import head_of, rest_after_head, statements, tokens, words
+from .shellview import (head_of, rest_after_head, statement_spans, statements,
+                        tokens, words)
 
 __all__ = ["is_help", "verb_path", "per_config", "acts"]
 
@@ -184,13 +186,24 @@ def _kubectl_acts(text):
     db -o yaml` would otherwise reach this as `get $(` with its output flag cut
     off — the substitution itself is still run, and scanned, as its own text.
     """
-    for stmt in statements(opaque_substitutions(text)):
+    view = opaque_substitutions(text)
+    bindings = None
+    for start, end in statement_spans(view):
+        stmt = view[start:end]
         head = head_of(stmt)
         if head not in KUBECTL_HEADS:
             continue
         rest = rest_after_head(stmt)
         if is_help(rest):
             continue
+        # A variable this same text bound to a literal before this statement IS
+        # that literal: `P=<proxy prefix>; kubectl get --raw "$P/labels"` reads
+        # what the prefix names. Anything `bindings.py` cannot prove stays a
+        # variable, and so stays unprovable.
+        if "$" in rest:
+            if bindings is None:
+                bindings = literal_bindings(view)
+            rest = resolve(rest, bindings, start)
         # kubectl's resource TYPE decides whether a call renders a Secret, and
         # the generic path cannot find it: flags precede it, and a variable can
         # stand in for it. `kubectl.py` says why.
