@@ -36,16 +36,17 @@
 //! more. A local write path that opens whenever the daemon is off is exactly that
 //! hole, one verb over.
 //!
-//! # Why a write may refuse when a read may not
+//! # Why a write refuses on failure when a read does not
 //!
-//! `keyless run` never refuses, because refusing blocks somebody's actual work
-//! and a tool that blocks work gets removed — after which the plaintext comes
-//! back. That argument does not transfer to `new` and `put`. They are setup
-//! steps, run once, with a person watching the output; nothing downstream is
-//! waiting on them. And the failure modes are asymmetric: a `run` that degrades
-//! still runs the command, where a write that "degraded" would report success
-//! with nothing stored, and the next `run` would degrade for a reason nobody can
-//! find. So the write verbs exit non-zero and say what is missing.
+//! `keyless run` never refuses over a store's failure, because that blocks
+//! somebody's actual work and a tool that blocks work gets removed — after
+//! which the plaintext comes back. That argument does not transfer to `new` and
+//! `put`. They are setup steps, run once, with a person watching the output;
+//! nothing downstream is waiting on them. And the failure modes are asymmetric:
+//! a `run` that degrades still runs the command, where a write that "degraded"
+//! would report success with nothing stored, and the next `run` would refuse a
+//! name its owner just watched being stored. So the write verbs exit non-zero
+//! and say what is missing.
 
 use crate::config::{Config, SecretRoute};
 use crate::secret::Secret;

@@ -1,13 +1,25 @@
 # Reference
 
-## Rule 1: it never refuses to run your command
+## Rule 1: it never blocks your command on a failure
 
-**Once `keyless run` has parsed its arguments, there is no code path in which it
-exits without spawning the child.** Not on a missing store, not on an unknown
-name, not on a corrupt config, not on a store that errors, hangs or floods, not
-on a value the kernel refuses to put in an environment, and not on a machine
-temporarily out of process slots. It warns on stderr and runs the command anyway
-with an unmodified environment.
+**Once `keyless run` has parsed its arguments, no failure of a store, a daemon or
+a config stops the child.** Not a missing store, not a corrupt config, not a
+store or daemon that errors, hangs or floods, not a value the kernel refuses to
+put in an environment, and not a machine temporarily out of process slots. It
+warns on stderr and runs the command anyway with an unmodified environment.
+
+It refuses a run only when a store has *answered*, and the answer is that the
+request is wrong:
+
+- **a name its store does not hold** — a typo, a guess, a probe, a name built
+  from an empty substitution or a pasted config value;
+- **an empty name** — `-s VAR=`, or a shell that substituted nothing;
+- **a caller that fails attestation** — `keylessd` will not serve that program.
+
+A refused run exits **64** without starting the command, and prints why for
+each refused name, with the nearest names the daemon serves or the fields the
+item behind the name does have. One refused name refuses the whole run, so the
+command never runs with a partial environment you did not expect.
 
 <details>
 <summary>The clause at the front of that sentence is doing real work. Here is what it buys and what it costs.</summary>
@@ -26,48 +38,54 @@ flag that changes what running means. Guessing would be worse than refusing, and
 the refusal happens before any code this project controls.
 
 So the honest claim is the qualified one. **An absolute with a counterexample is
-worth less than a bounded claim that holds** — it invites exactly the search that
-found the nine, and the first person to run `keyless run --typo` gets to say the
-headline is false. What the qualified sentence still says, and what the audit of
-20+ competing tools found no other tool saying: **no failure of a secret ever
-costs you the command.**
+worth less than a bounded claim that holds.** What the qualified sentence still
+says: **no failure of a store or of `keyless` itself ever costs you the
+command.** A wrong name is not a failure of either — running the command without
+the credential it named only moves the mistake somewhere harder to read.
 
 </details>
 
 ```console
 $ keyless run -s DATABASE_URL -s GITHUB_TOKEN -- ./migrate.sh
 keyless: DEGRADED — 2 names unresolved: DATABASE_URL, GITHUB_TOKEN
-keyless:   DATABASE_URL: not found in any store
+keyless:   DATABASE_URL: store `daemon` is unavailable: ...
 ...your command runs, and its exit code is yours...
+
+$ keyless run -s DATABSE_URL -- ./migrate.sh
+keyless: REFUSED — 1 of 1 names refused; the command was not run
+keyless:   `DATABSE_URL`: store `daemon` refused: ...; nearest served names: DATABASE_URL (indexed 2m ago)
 ```
 
-There are two states and no third:
+There are three states:
 
 - **INJECTED** — every requested name resolved, was injected, and is masked.
-- **DEGRADED** — anything else. The environment is untouched.
+- **DEGRADED** — a store could not answer for a name. The command runs with an
+  untouched environment.
+- **REFUSED** — a store answered that it holds no such name, the name was empty,
+  or the caller failed attestation. The command never starts.
 
-A partial injection would be a third state, so it does not exist: if one name of
+A partial injection would be a fourth state, so it does not exist: if one name of
 three is missing, none of the three is injected. Fewer secrets, never more.
 
 This is not politeness. A tool that occasionally blocks the work gets
 uninstalled, and what comes back is the plaintext literal on the command line.
-Degrading loses the protection for one command; failing loses it for good.
+Degrading loses the protection for one command; failing loses it for good. A
+refusal is different: it costs one corrected name, never an outage.
 
 *Degraded runs still mask.* Whatever did resolve is still compiled into the
 output filter even though nothing is injected — so a value you typed by hand
 stays out of the audit log and out of the echoed output. Injection is withheld
 when degraded; redaction is not.
 
-There are exactly three ways out without a child, and none of them is `keyless`
-declining to run something it could have run:
+These are the ways out without a child:
 
 | Exit | Meaning | Who decided |
 |---:|---|---|
 | 2 | an argument could not be parsed — an unknown flag, a missing `--` | clap, before `keyless` runs |
-| 64 | no command followed the flags (`EX_USAGE`) | `keyless`, with nothing to spawn |
+| 64 | a refused run, or no command followed the flags (`EX_USAGE`) | a store's answer, or `keyless` with nothing to spawn |
 | 127 | the command exists as text but not as an executable | the kernel, at `execve` |
 
-Everything else — every store, every name, every config, every deadline, every
+Everything else — every unreachable store, every config, every deadline, every
 value the kernel will not accept — is a **degrade**: a line on stderr, the
 command runs, and its exit code is yours.
 
@@ -155,7 +173,7 @@ What comes with the pty:
 **A pty is a comfort, not a precondition.** If one cannot be allocated — no
 `/dev/ptmx`, no free descriptors, an unsupported platform — `keyless` prints one
 line, falls back to pipes, and runs your command with its secrets injected
-exactly as it would have. The never-block rule has no exception for terminals.
+exactly as it would have. Rule 1 has no exception for terminals.
 
 There is no flag to force a pty on or off. The condition is observable and the
 fallback is automatic, so a switch would only be a way to get it wrong.

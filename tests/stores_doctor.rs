@@ -23,8 +23,8 @@ use stores_support::{
 // printed `store proton ok` and `0 problem(s)` while every Proton name was
 // degrading — the child ran with an empty bearer and the resulting HTTP 400
 // came back at exit 0. `doctor` is the command a session is told to run to find
-// that out, and `keyless run` never refuses, so nothing else on the machine
-// could have said it.
+// that out, and `keyless run` degrades on a dead session, so nothing else on
+// the machine could have said it.
 // ---------------------------------------------------------------------------
 
 #[test]

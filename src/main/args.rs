@@ -22,11 +22,12 @@ use keyless::random::DEFAULT_LENGTH;
                   \x20 There is deliberately no verb that prints a value, and there never will \
                   be. That absence is the product. To use a secret, run the command that needs \
                   it under `keyless run`.\n\n\
-                  IT NEVER BLOCKS YOUR COMMAND\n\
-                  \x20 If a name cannot be resolved, `keyless run` says so on stderr, runs your \
-                  command with that variable unset, and forwards the command's own exit code. \
-                  So a missing credential is your program's error, at your program's exit code \
-                  — never a refusal from this tool.\n\n\
+                  IT NEVER BLOCKS YOUR COMMAND ON A FAILURE\n\
+                  \x20 If a store or the daemon cannot answer, `keyless run` says DEGRADED on \
+                  stderr, runs your command with that variable unset, and forwards the \
+                  command's own exit code. It refuses only a name its store does not hold, an \
+                  empty name, or a caller that fails attestation: REFUSED on stderr with the \
+                  nearest names served, exit 64, and your command never starts.\n\n\
                   WHAT EACH VERB IS FOR\n\
                   \x20 setup    install everything: config, guards, agent instructions\n\
                   \x20 disable  confirm at a terminal, then stop every guard firing. Nothing \

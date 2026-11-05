@@ -20,10 +20,12 @@ never have to agree.
 
 Two rules shape everything else, and both are structural rather than advisory:
 
-- **[`keyless run` never refuses to run your
-  command.](docs/guide/reference.md#rule-1-it-never-refuses-to-run-your-command)** A missing name, a
-  broken config or an unreachable store warns on stderr and runs your command
-  anyway, with an unmodified environment.
+- **[`keyless run` never blocks your command on a
+  failure.](docs/guide/reference.md#rule-1-it-never-blocks-your-command-on-a-failure)** A broken
+  config, an unreachable store or a dead daemon warns on stderr and runs your
+  command anyway, with an unmodified environment. It refuses only a name its
+  store does not hold, an empty name, or a caller that fails attestation: exit
+  64, the command never starts, and stderr names what to ask for instead.
 - **[No verb prints a value.](docs/guide/reference.md#rule-2-there-is-no-verb-that-prints-a-value)**
   There is no `get`, no `--reveal`, no debug flag. If a command needs a
   credential, run the command under `keyless run`.

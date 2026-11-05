@@ -149,8 +149,9 @@ keyless:   DATABASE_URL: store `infisical` was not asked: `DATABASE_URL` has no
 ...your command runs anyway, with an unmodified environment...
 ```
 
-That is a degrade, never a refusal — [rule
-1](reference.md#rule-1-it-never-refuses-to-run-your-command) has no exception for this
+That is a degrade, never a refusal: no store was asked, so none answered that
+it holds no such name, and [rule
+1](reference.md#rule-1-it-never-blocks-your-command-on-a-failure) has no exception for this
 either.
 
 **A name's own `env` outranks `--env`.** The flag is a blanket aimed at the names
@@ -166,7 +167,7 @@ vanish without a word.
 `path` is deliberately **not** treated this way and still defaults to `/`. That
 is the vendor's own default, so `keyless` invents nothing; and the two fail
 differently — a wrong path can only miss a folder *inside the environment you
-named*, which degrades and says so, while a wrong environment returns a
+named*, which refuses the run and says so, while a wrong environment returns a
 plausible value from the other side of the boundary. `keyless ls` prints both
 coordinates for every Infisical name, so a folder that holds nothing is visible
 without a lookup.

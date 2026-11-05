@@ -32,9 +32,11 @@ pub(super) fn skill_file(setup: &SetupPaths) -> PathBuf {
 ///   an unexpanded `$NAME` handed to a program that is not a shell is reported
 ///   by `run` itself, at the moment it happens, naming the corrected line.
 ///
-/// What is left is the half no design can remove: a `run` whose credential did
-/// not resolve is INDISTINGUISHABLE from a successful one by exit code, because
-/// the exit code belongs to the child and this tool refuses to invent one.
+/// What is left is the half no design can remove: a DEGRADED `run`, whose store
+/// could not answer, is INDISTINGUISHABLE from a successful one by exit code,
+/// because the exit code belongs to the child and this tool refuses to invent
+/// one. A refused run has an exit code of its own, so it needs only a sentence
+/// saying what to do next.
 /// There is no mechanism that can teach that at the moment it matters, because
 /// at that moment nothing has gone wrong yet.
 pub(super) const SKILL: &str = concat!(
@@ -43,8 +45,8 @@ pub(super) const SKILL: &str = concat!(
     "description: >-\n",
     "  Use a credential without ever reading one. Load when a command needs an API key,\n",
     "  a token, a database URL or any other secret; when a `.env` or credential file read\n",
-    "  is refused; or when a command fails to authenticate and the value came from a\n",
-    "  secret store.\n",
+    "  is refused; when `keyless run` exits 64 with REFUSED; or when a command fails to\n",
+    "  authenticate and the value came from a secret store.\n",
     "---\n",
     "\n",
     "# keyless\n",
@@ -58,16 +60,18 @@ pub(super) const SKILL: &str = concat!(
     "keyless ls                                 the names you can use\n",
     "```\n",
     "\n",
-    "## The one thing no error will tell you\n",
+    "## REFUSED and DEGRADED\n",
     "\n",
-    "**`keyless run` never refuses to run your command.** A name that does not\n",
-    "resolve is a warning on stderr, and the child runs with an untouched\n",
-    "environment — so a missing credential arrives as your program's own 401, at\n",
-    "your program's own exit code.\n",
+    "**`REFUSED`, exit 64: your command did not run.** The store holds no such\n",
+    "name, the name was empty, or this caller failed attestation. stderr lists the\n",
+    "nearest names served, or the fields the item does have: fix the name and run\n",
+    "again. One refused name refuses the whole run.\n",
     "\n",
-    "**So the exit code cannot tell you the credential arrived. Read stderr for\n",
-    "`DEGRADED`.** Exit 0 with a `DEGRADED` banner means the command ran without\n",
-    "the secret.\n",
+    "**`DEGRADED`: your command ran without the secret.** The store or the daemon\n",
+    "could not answer, so the child runs with an untouched environment and a\n",
+    "missing credential arrives as your program's own 401, at your program's own\n",
+    "exit code. The exit code cannot tell you the credential arrived, so read\n",
+    "stderr for `DEGRADED`. The name is not the problem; retrying later may work.\n",
     "\n",
     "## Quoting\n",
     "\n",

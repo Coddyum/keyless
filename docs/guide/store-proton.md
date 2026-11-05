@@ -84,7 +84,11 @@ rule below lives, so a listing reused forever goes on resolving an item somebody
 trashed — silently, and for as long as the process holding it stays alive. One
 `keyless run` finishes long before the expiry, so it pays nothing for the bound.
 
-Four rules, each of which degrades the name and never the command:
+Four rules for what a title resolves to. *Refused* in this table is the adapter
+declining to read an item; what the run does next follows
+[Rule 1](reference.md#rule-1-it-never-blocks-your-command-on-a-failure). Through
+`keylessd`, a title the vault does not hold refuses the run — exit 64, the
+nearest served names on stderr — and a vault that cannot be listed degrades it:
 
 | Situation | Outcome |
 |---|---|

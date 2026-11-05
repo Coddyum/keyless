@@ -157,11 +157,17 @@ fewer secrets, never more.
 
 ## The rule still has no exception
 
-A daemon that is absent, stale, wedged, refusing, killed mid-request, speaking
-another protocol version, or answering nonsense is a `DEGRADED` like any other
-store failure: one line on stderr, and **your command runs** with an unmodified
-environment. There is one property test per failure mode — seventeen of them —
+A daemon that is absent, stale, wedged, killed mid-request, speaking another
+protocol version, or answering nonsense is a `DEGRADED` like any other store
+failure: one line on stderr, and **your command runs** with an unmodified
+environment. There is one property test per failure mode — fifteen of them —
 and each asserts the child actually ran by reading a file the child wrote, which
 a process that never started cannot imitate.
+
+A daemon that *answers* has not failed. When its store holds no such name, or
+the caller fails attestation, the run is `REFUSED`: exit 64, your command never
+starts, and stderr names the nearest names the daemon serves. Both audit logs
+record the refusal under its own state, so an alert watching for `DEGRADED`
+sees only runs whose command ran without a value.
 
 ---

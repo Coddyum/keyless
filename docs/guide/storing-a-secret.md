@@ -29,10 +29,12 @@ has no `--reveal`.
 At a terminal, `put` prompts with echo off. If echo cannot be switched off it
 does **not** prompt anyway; a prompt that echoes would print the credential.
 
-## These verbs may refuse. `run` may not
+## These verbs refuse on failure. `run` does not
 
-`keyless run` never refuses, because blocking your work gets the tool uninstalled
-and then the plaintext comes back. That argument does not transfer to setup
+`keyless run` never blocks on a store's failure, because blocking your work gets
+the tool uninstalled and then the plaintext comes back; it refuses only a name
+its store does not hold, an empty name, or a caller that fails attestation. That
+argument does not transfer to setup
 commands: `new` and `put` run once, with you watching, and nothing downstream is
 waiting on them. And a write that "degraded" would report success with nothing
 stored — which the next `run` would report as a missing name, for a reason nobody
