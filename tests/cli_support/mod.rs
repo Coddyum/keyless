@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-use crate::support::{Stub, keychain_stub_config};
+use crate::support::keychain::{Stub, keychain_stub_config};
 
 pub const BIN: &str = env!("CARGO_BIN_EXE_keyless");
 

@@ -2,7 +2,8 @@ mod cli_support;
 mod support;
 
 use cli_support::{config_with_stub, keyless, stderr_of, stdout_of};
-use support::{DECOY_VALUE, Stub, scratch, stub_security};
+use support::keychain::{Stub, stub_security};
+use support::{DECOY_VALUE, scratch};
 
 #[test]
 fn there_is_no_way_to_pass_a_value_to_put_as_an_argument() {

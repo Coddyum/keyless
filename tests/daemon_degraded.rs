@@ -41,7 +41,9 @@ use keyless::cmd::run::{Binding, RunRequest, TtyPolicy, run};
 use keyless::store;
 use keyless::store::Invocation;
 
-use support::{DECOY_VALUE, client_config, scratch, short_socket_path, witness, witnessed};
+use support::child_witness::{witness, witnessed};
+use support::client::client_config;
+use support::{DECOY_VALUE, scratch, short_socket_path};
 
 /// How long a client waits before giving up on a wedged daemon. Short, so the
 /// timeout tests do not dominate the suite.
@@ -338,9 +340,9 @@ fn a_daemon_that_refuses_the_caller_degrades() {
     // A refused attestation must look exactly like every other failure from
     // `run`'s point of view: warn, and run the command anyway.
     let dir = scratch("daemon-denied");
-    let config = support::daemon_config(&dir);
-    support::write_secrets(&config.stores.file.path, &[("DECOY", DECOY_VALUE)]);
-    let running = support::start_daemon(&config, support::policy_allowing_nobody());
+    let config = support::daemon::daemon_config(&dir);
+    support::client::write_secrets(&config.stores.file.path, &[("DECOY", DECOY_VALUE)]);
+    let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_nobody());
 
     let marker = dir.join("marker");
     assert_degraded_but_ran("denied", running.socket(), &marker);
@@ -353,10 +355,10 @@ fn a_daemon_that_refuses_the_caller_degrades() {
 #[test]
 fn a_daemon_whose_store_is_broken_degrades() {
     let dir = scratch("daemon-brokenstore");
-    let config = support::daemon_config(&dir);
+    let config = support::daemon::daemon_config(&dir);
     // The store file is never created, so the daemon is healthy and its
     // backend is not.
-    let running = support::start_daemon(&config, support::policy_allowing_self());
+    let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_self());
 
     let marker = dir.join("marker");
     assert_degraded_but_ran("broken store", running.socket(), &marker);
@@ -369,9 +371,9 @@ fn a_daemon_whose_store_is_broken_degrades() {
 #[test]
 fn a_daemon_that_does_not_have_the_name_degrades() {
     let dir = scratch("daemon-absentname");
-    let config = support::daemon_config(&dir);
-    support::write_secrets(&config.stores.file.path, &[("SOMETHING_ELSE", DECOY_VALUE)]);
-    let running = support::start_daemon(&config, support::policy_allowing_self());
+    let config = support::daemon::daemon_config(&dir);
+    support::client::write_secrets(&config.stores.file.path, &[("SOMETHING_ELSE", DECOY_VALUE)]);
+    let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_self());
 
     let marker = dir.join("marker");
     assert_degraded_but_ran("absent name", running.socket(), &marker);
@@ -387,9 +389,9 @@ fn a_daemon_that_dies_between_two_runs_degrades_the_second() {
     // the only difference is that the daemon stopped. The second run must lose
     // the secret and keep the command.
     let dir = scratch("daemon-dies");
-    let config = support::daemon_config(&dir);
-    support::write_secrets(&config.stores.file.path, &[("DECOY", DECOY_VALUE)]);
-    let running = support::start_daemon(&config, support::policy_allowing_self());
+    let config = support::daemon::daemon_config(&dir);
+    support::client::write_secrets(&config.stores.file.path, &[("DECOY", DECOY_VALUE)]);
+    let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_self());
     let socket = running.socket().to_path_buf();
 
     let first_marker = dir.join("marker-before");
