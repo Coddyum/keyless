@@ -4,12 +4,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use keyless::cmd::ls::ls;
+use keyless::cmd::run::Outcome;
 use keyless::config::Config;
 use keyless::daemon::config::DaemonConfig;
 use keyless::ipc::client::Client;
 use keyless::ipc::protocol::{Reply, Request};
-use keyless::store::Resolution;
+use keyless::store::{Registry, Resolution};
 
+use crate::support::child_witness::{run_with, witness, witnessed};
 use crate::support::client::write_secrets;
 use crate::support::short_socket_path;
 
@@ -122,4 +124,79 @@ pub fn listing(config: &Config) -> (String, String) {
         String::from_utf8(out).expect("utf-8"),
         String::from_utf8(err).expect("utf-8"),
     )
+}
+
+/// How long the vendor tallies must sit still before a rebuild is called done.
+///
+/// Sized against ONE gap: a rebuild is a `vault list` and then one `item list`
+/// per vault, so the longest a running rebuild can leave the tallies unmoved is
+/// the time to spawn one stub process. The worker's idle wait is unbounded and
+/// wakes on its condvar, so there is no polling interval to cover any more —
+/// this was 750 ms against a 250 ms `WORKER_POLL` that no longer exists, and it
+/// stays there as headroom for a loaded machine rather than as a number derived
+/// from anything.
+///
+/// A ceiling, never a measurement: a machine slower than this goes RED at the
+/// deadline in [`settle`] rather than green.
+const QUIET: Duration = Duration::from_millis(750);
+
+/// Wait until no rebuild is running or pending.
+///
+/// # Why waiting for the NAME is not enough
+///
+/// `wait_until_served` returns the moment an index containing the name exists,
+/// which says nothing about whether another rebuild is still in flight — and
+/// while no index exists at all, every `Op::Names` the poll sends queues one.
+/// A test that mutated the vault at that point could have its change read by a
+/// rebuild it did not ask for, and its first resolve would then HIT: the case
+/// would report a pass having proved nothing about the retry.
+///
+/// The observable is the stub's own spawn tallies. Two conditions together:
+/// the two counts are EQUAL, which rules out a rebuild sitting between its
+/// vault listing and its item listing, and neither has moved for [`QUIET`],
+/// which rules out one starting. After that the only producers left are a
+/// resolve miss and an `Op::Names` over a daemon with no index, and the caller
+/// controls both.
+pub fn settle(dir: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let before = (
+            crate::support::proton::vault_list_count(dir),
+            crate::support::proton::listing_count(dir),
+        );
+        std::thread::sleep(QUIET);
+        let after = (
+            crate::support::proton::vault_list_count(dir),
+            crate::support::proton::listing_count(dir),
+        );
+        if before == after && after.0 == after.1 {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the vendor tallies never settled: {before:?} then {after:?}"
+        );
+    }
+}
+
+/// Run one witness child binding `name`, and say what it saw.
+pub fn run_named(registry: &Registry, dir: &Path, name: &str) -> (Outcome, String) {
+    let marker = dir.join(format!("{name}.marker"));
+    let (outcome, _notes) = run_with(registry, &[name], &witness(&marker, name, 0), &[]);
+    (outcome, witnessed(&marker))
+}
+
+/// The `decision` on the daemon's newest audit row naming `name`.
+pub fn last_decision(dir: &Path, name: &str) -> Option<String> {
+    let audit = std::fs::read_to_string(dir.join("audit.jsonl")).unwrap_or_default();
+    audit
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|row| {
+            row["names"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|listed| listed.as_str() == Some(name)))
+        })
+        .and_then(|row| row["decision"].as_str().map(str::to_owned))
 }

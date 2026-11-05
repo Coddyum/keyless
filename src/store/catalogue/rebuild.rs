@@ -1,4 +1,4 @@
-//! The worker that keeps the derived index fresh, off the request path.
+//! The worker that keeps the derived index fresh, for the misses that wait on it.
 
 use std::collections::VecDeque;
 use std::io::Write;
@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use super::{Catalogue, IndexBuilder, ItemKey, Rebuilder, Source};
+use super::{Catalogue, IndexBuilder, ItemKey, Rebuilder, Rebuilt, Route, Source};
 
 /// How long a failed rebuild waits before another is started.
 ///
@@ -44,8 +44,17 @@ struct Work {
     /// A request that arrives while one is running wants what that one is
     /// already fetching, so it is dropped rather than queued.
     running: bool,
+    /// How many full enumerations the worker has taken, and how many it has
+    /// finished. A miss waits for the one that covers it by number, so misses
+    /// arriving during one enumeration all wait on that one.
+    taken: u64,
+    finished: u64,
+    /// Whether the last finished enumeration installed a snapshot.
+    installed: bool,
     /// Items whose field view a miss asked for.
     items: VecDeque<ItemKey>,
+    /// The item whose field view is being fetched right now.
+    fetching: Option<ItemKey>,
     /// When the last attempt failed without producing a snapshot.
     failed_at: Option<Instant>,
 }
@@ -55,6 +64,8 @@ pub(super) struct Engine {
     sources: Vec<Source>,
     work: Mutex<Work>,
     wake: Condvar,
+    /// Signalled whenever a task finishes, for the misses waiting on one.
+    settled: Condvar,
     stop: AtomicBool,
 }
 
@@ -110,6 +121,7 @@ impl Rebuilder {
             sources,
             work: Mutex::new(Work::default()),
             wake: Condvar::new(),
+            settled: Condvar::new(),
             stop: AtomicBool::new(false),
         });
         let (alive, done) = std::sync::mpsc::channel::<Never>();
@@ -128,44 +140,98 @@ impl Rebuilder {
         }
     }
 
-    /// Ask for whatever this missed name needs, and say whether anything was
-    /// queued.
+    /// Bring the catalogue up to date for a name the store did not serve, and
+    /// wait for it, for at most `within`.
     ///
-    /// A name that inverts onto a live title needs that ONE item's fields —
-    /// stage two, one vendor call. A name that inverts onto nothing needs a
-    /// fresh listing, which is stage one. A name that inverts onto an item
-    /// whose view is already fresh needs nothing at all: the answer is that the
-    /// item does not serve it, and asking again would not change that.
-    pub fn queue(&self, name: &str) -> bool {
+    /// A name that inverts onto nothing needs a fresh listing; one that then
+    /// inverts onto a live title whose field view is stale needs that one
+    /// item's fields. A name that inverts onto an item whose view is fresh
+    /// needs nothing: that item does not serve it.
+    ///
+    /// Misses arriving while a listing or a field fetch is in flight wait on
+    /// that one rather than starting their own, so a burst of runs against one
+    /// stale index costs one vendor listing.
+    ///
+    /// Anything short of a verdict is [`Rebuilt::Silent`]: the wait running
+    /// out, a store that could not be enumerated, or one that failed within
+    /// [`REBUILD_RETRY_FLOOR`]. An unreachable store must never read as a name
+    /// it does not hold.
+    pub fn rebuild_for(&self, name: &str, within: Duration) -> Rebuilt {
+        let deadline = Instant::now() + within;
         let catalogue = &self.engine.catalogue;
+        let mut listed = false;
         let mut work = self.engine.lock();
-        if work
-            .failed_at
-            .is_some_and(|at| at.elapsed() < REBUILD_RETRY_FLOOR)
-        {
-            return false;
-        }
-        let queued = match catalogue.invert(name) {
-            Some(item) if !catalogue.view_is_fresh(&item) => {
-                if work.items.contains(&item) {
-                    false
-                } else {
-                    work.items.push_back(item);
-                    true
+        loop {
+            if work
+                .failed_at
+                .is_some_and(|at| at.elapsed() < REBUILD_RETRY_FLOOR)
+            {
+                return Rebuilt::Silent;
+            }
+            if !matches!(catalogue.route(name), Route::Unknown { .. }) {
+                return Rebuilt::Current;
+            }
+            match catalogue.invert(name) {
+                Some(item) if !catalogue.view_is_fresh(&item) => {
+                    let pending = |work: &Work| {
+                        work.items.contains(&item) || work.fetching.as_ref() == Some(&item)
+                    };
+                    if !pending(&work) {
+                        work.items.push_back(item.clone());
+                        self.engine.wake.notify_one();
+                    }
+                    let Some(settled) = self.settle(work, deadline, |work| !pending(work)) else {
+                        return Rebuilt::Silent;
+                    };
+                    drop(settled);
+                    return if catalogue.view_is_fresh(&item) {
+                        Rebuilt::Current
+                    } else {
+                        Rebuilt::Silent
+                    };
+                }
+                Some(_) => return Rebuilt::Current,
+                None if listed => return Rebuilt::Current,
+                None => {
+                    let covering = if work.running {
+                        work.taken
+                    } else {
+                        work.full = true;
+                        self.engine.wake.notify_one();
+                        work.taken + 1
+                    };
+                    let Some(settled) =
+                        self.settle(work, deadline, |work| work.finished >= covering)
+                    else {
+                        return Rebuilt::Silent;
+                    };
+                    if !settled.installed {
+                        return Rebuilt::Silent;
+                    }
+                    work = settled;
+                    listed = true;
                 }
             }
-            Some(_) => false,
-            None => {
-                let fresh = !work.full && !work.running;
-                work.full = fresh;
-                fresh
-            }
-        };
-        drop(work);
-        if queued {
-            self.engine.wake.notify_one();
         }
-        queued
+    }
+
+    /// Wait until `done` holds, or `None` once `deadline` passes first.
+    fn settle<'a>(
+        &self,
+        mut work: MutexGuard<'a, Work>,
+        deadline: Instant,
+        done: impl Fn(&Work) -> bool,
+    ) -> Option<MutexGuard<'a, Work>> {
+        while !done(&work) {
+            let left = deadline.checked_duration_since(Instant::now())?;
+            work = self
+                .engine
+                .settled
+                .wait_timeout(work, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        Some(work)
     }
 
     /// Ask for a full enumeration, whatever the floor says.
@@ -174,7 +240,7 @@ impl Rebuilder {
     /// the floor exists to bound RETRIES rather than to delay the first one.
     pub fn queue_full(&self) {
         let mut work = self.engine.lock();
-        // Floored on the same terms as `queue`, and for a reason the `running`
+        // Floored on the same terms as `rebuild_for`, and for a reason the `running`
         // guard does not cover: a rebuild that FAILED installs nothing, so
         // `indexed_at()` stays `None` and the daemon asks again on every
         // listing. Against a store that is down, N `keyless ls` invocations
@@ -209,9 +275,11 @@ impl Engine {
                     if work.full {
                         work.full = false;
                         work.running = true;
+                        work.taken += 1;
                         break Task::Full;
                     }
                     if let Some(item) = work.items.pop_front() {
+                        work.fetching = Some(item.clone());
                         break Task::Fields(item);
                     }
                     // Unbounded, with no timeout to re-check the stop flag on:
@@ -230,11 +298,18 @@ impl Engine {
             };
             match taken {
                 Task::Full => {
-                    self.rebuild();
-                    self.lock().running = false;
+                    let installed = self.rebuild();
+                    let mut work = self.lock();
+                    work.running = false;
+                    work.finished += 1;
+                    work.installed = installed;
                 }
-                Task::Fields(item) => self.fetch_fields(&item),
+                Task::Fields(item) => {
+                    self.fetch_fields(&item);
+                    self.lock().fetching = None;
+                }
             }
+            self.settled.notify_all();
         }
     }
 
@@ -248,12 +323,12 @@ impl Engine {
     /// exactly like its items having been deleted. The previous snapshot is
     /// older and correct, so it stands, and the failure is floored so the next
     /// miss does not spawn again immediately.
-    fn rebuild(&self) {
+    fn rebuild(&self) -> bool {
         let mut building = IndexBuilder::new();
         for source in &self.sources {
             let Ok(items) = source.discover.items(None) else {
                 self.lock().failed_at = Some(Instant::now());
-                return;
+                return false;
             };
             for item in &items {
                 building.item(source.mint.as_ref(), item);
@@ -261,6 +336,7 @@ impl Engine {
         }
         self.lock().failed_at = None;
         self.catalogue.install(building.finish());
+        true
     }
 
     /// Fetch one item's fields — stage two.

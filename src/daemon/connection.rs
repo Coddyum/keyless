@@ -11,13 +11,13 @@ use crate::attest::{Attestation, Policy, attest};
 use crate::audit::AuditLog;
 use crate::ipc::protocol::{Op, Reply, Request, read_frame, write_frame};
 use crate::secret::Secret;
-use crate::store::catalogue::{Catalogue, Rebuilder, Route};
+use crate::store::catalogue::{Catalogue, Rebuilder, Rebuilt, Route};
 use crate::{NAME, State};
 
 use self::record::{Decision, Served};
 use super::credential;
 use super::heartbeat::Heartbeat;
-use super::resolver::{Outcome, Resolver};
+use super::resolver::{Answer, FailureKind, Outcome, Resolver};
 
 /// Longest name a client may ask for. Names go into audit rows, so an unbounded
 /// one is a way to push a row over the atomic-write cap.
@@ -28,6 +28,7 @@ pub(super) struct Connection {
     pub(super) audit: Arc<AuditLog>,
     pub(super) catalogue: Arc<Catalogue>,
     pub(super) rebuilder: Arc<Rebuilder>,
+    pub(super) rebuild_within: Duration,
     pub(super) idle: Duration,
     pub(super) live: Arc<AtomicUsize>,
     /// See [`Daemon::token_expires`].
@@ -196,7 +197,7 @@ impl Connection {
             );
         }
 
-        let answer = self.resolver.resolve(&request.name);
+        let answer = self.resolve_rebuilding(&request.name);
         let served = Some(Served {
             source: answer.source,
             age: answer.age,
@@ -218,9 +219,6 @@ impl Connection {
                 Reply::Value(Secret::new(secret.expose().to_owned()))
             }
             Outcome::Absent => {
-                // The verdict is dropped: `Reply::Absent` carries no sentence,
-                // so composing one would walk every title for nothing.
-                let _ = self.missed(&request.name);
                 self.record(
                     request,
                     attestation,
@@ -232,7 +230,7 @@ impl Connection {
                 Reply::Absent
             }
             Outcome::Failed { reason, kind } => {
-                let route = self.missed(&request.name);
+                let route = self.catalogue.route(&request.name);
                 self.record(
                     request,
                     attestation,
@@ -248,10 +246,11 @@ impl Connection {
         (reply, advisory)
     }
 
-    /// Queue whatever a name that produced no value needs, and hand back what
-    /// the catalogue said about it.
+    /// Resolve `name`, and when its store answered without a value for a name
+    /// the catalogue does not route, rebuild the catalogue and resolve once
+    /// more before answering.
     ///
-    /// # Why this runs AFTER the resolve and never before it
+    /// # Why the catalogue is consulted AFTER the resolve and never before it
     ///
     /// Two reasons, and the second is the one that bites. A resolve that
     /// produces a value must not gain a lock or a lookup it did not have, so
@@ -263,15 +262,38 @@ impl Connection {
     /// gate would turn every one of those into a miss — the tool would stop
     /// serving names it serves today, and the index would look correct while
     /// doing it.
-    fn missed(&self, name: &str) -> Route {
-        let route = self.catalogue.route(name);
-        if matches!(route, Route::Unknown { .. }) {
-            self.rebuilder.queue(name);
+    ///
+    /// # Why a silent store skips the rebuild, and a silent rebuild is silence
+    ///
+    /// A store that gave no verdict said nothing about the name, so there is
+    /// nothing for a fresher index to correct. And a rebuild that gives no
+    /// verdict leaves the name's existence unknown: answering with the first
+    /// resolve's "no such name" would turn an unreachable vault into a name
+    /// it does not hold.
+    fn resolve_rebuilding(&self, name: &str) -> Answer {
+        let answer = self.resolver.resolve(name);
+        let answered_without_value = match &answer.outcome {
+            Outcome::Found(_) => false,
+            Outcome::Absent => true,
+            Outcome::Failed { kind, .. } => *kind == FailureKind::Verdict,
+        };
+        if !answered_without_value || !matches!(self.catalogue.route(name), Route::Unknown { .. }) {
+            return answer;
         }
-        // Handed back rather than recomputed by whoever wants the sentence:
-        // this verdict already cost a walk of the index, and `advice` would
-        // otherwise make the same walk a second time on the one arm that uses
-        // it.
-        route
+        match self.rebuilder.rebuild_for(name, self.rebuild_within) {
+            Rebuilt::Current if matches!(self.catalogue.route(name), Route::Known(_)) => {
+                self.resolver.resolve(name)
+            }
+            Rebuilt::Current => answer,
+            Rebuilt::Silent => Answer {
+                outcome: Outcome::Failed {
+                    reason: "the store gave no verdict on the catalogue rebuild this name needed"
+                        .to_owned(),
+                    kind: FailureKind::Silent,
+                },
+                source: answer.source,
+                age: answer.age,
+            },
+        }
     }
 }
