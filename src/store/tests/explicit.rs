@@ -156,8 +156,11 @@ fn every_backend_healthy_and_empty_reports_notfound() {
 }
 
 #[test]
-fn an_empty_registry_reports_notfound_rather_than_panicking() {
+fn an_empty_registry_reports_no_store_enabled_rather_than_an_absence() {
     let registry = Registry::new(Vec::new());
-    assert!(matches!(registry.resolve("X"), Resolution::NotFound { .. }));
+    assert!(matches!(
+        registry.resolve("X"),
+        Resolution::Failed(errors) if errors[0].to_string().contains("no store is enabled")
+    ));
     assert!(registry.is_empty());
 }

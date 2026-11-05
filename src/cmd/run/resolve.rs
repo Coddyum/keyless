@@ -16,23 +16,22 @@ enum Fate {
     Inject,
     /// The child runs without the value: nothing was decided about the name.
     Degrade,
-    /// The child never starts: a store declined the request itself.
+    /// The child never starts: a store declined the request, or holds no such
+    /// name.
     Refuse,
 }
 
 /// The one place a verdict becomes a fate.
 ///
-/// Only a store's position on the request refuses: a name it will not look up,
-/// or a caller it will not serve. Silence, an unreachable or misbehaving
-/// daemon, an ambiguity in routing and a name no store holds all degrade, and
-/// a verdict that should refuse instead moves its arm here and nowhere else.
+/// A store's own position on the request refuses: a name it does not hold, a
+/// name it will not look up, or a caller it will not serve. Failing to get a
+/// position degrades instead — silence, a store or daemon that errors, and an
+/// ambiguity in routing, which is this machine's config rather than the name.
 fn fate(resolution: &Resolution) -> Fate {
     match resolution {
         Resolution::Found { .. } => Fate::Inject,
-        Resolution::Refused { .. } => Fate::Refuse,
-        Resolution::NotFound { .. } | Resolution::Failed(_) | Resolution::Ambiguous { .. } => {
-            Fate::Degrade
-        }
+        Resolution::Refused { .. } | Resolution::NotFound { .. } => Fate::Refuse,
+        Resolution::Failed(_) | Resolution::Ambiguous { .. } => Fate::Degrade,
     }
 }
 

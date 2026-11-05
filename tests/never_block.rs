@@ -5,21 +5,25 @@
 //! that is blocked is worse than one that runs without a secret, so every
 //! failure in this file costs a degrade and never the child.
 //!
-//! Six failures are meant to be survivable, and each gets a test that checks
+//! Five failures are meant to be survivable, and each gets a test that checks
 //! the same three things: the child **ran**, the child's **exit code came
 //! back**, and the child's **environment was not modified**. The third is what
 //! separates this from "we caught the error" — a degraded run must not hand the
 //! child a half-built environment.
 //!
-//! The fifth is the one where `keyless` declines to *ask*: a backend whose
+//! The fourth is the one where `keyless` declines to *ask*: a backend whose
 //! required coordinate is missing is not queried at all, because guessing one
 //! resolves a name against the wrong tenant. Declining to guess must still cost
 //! a degrade rather than the command.
 //!
-//! The sixth — a pseudo-terminal that cannot be allocated — is the odd one out
+//! The fifth — a pseudo-terminal that cannot be allocated — is the odd one out
 //! and asserts the environment *was* modified. Losing a terminal is a loss of
 //! comfort, not of trust: there is no reason to withhold a secret that resolved
 //! perfectly well just because the output will not be coloured.
+//!
+//! One answer marks the boundary and is not a failure at all: a healthy store
+//! that has never heard of the name. That run is refused — the child never
+//! starts — because running it would hide a wrong name inside the child.
 //!
 //! An audit of 20+ competing tools found not one that degrades instead of
 //! failing closed. That is the gap these tests defend.
@@ -39,7 +43,7 @@ use support::{
 };
 
 // ---------------------------------------------------------------------------
-// Property 1 of 4: the store cannot be reached at all.
+// Property 1 of 5: the store cannot be reached at all.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -75,11 +79,11 @@ fn store_unreachable_still_spawns_the_child() {
 }
 
 // ---------------------------------------------------------------------------
-// Property 2 of 4: the store is healthy and has never heard of the name.
+// The boundary: the store is healthy and has never heard of the name.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn name_not_found_still_spawns_the_child() {
+fn name_not_found_refuses_the_run_and_never_spawns_the_child() {
     let dir = scratch("name-not-found");
     let marker = dir.join("witness");
     let stub = stub_security(&dir, &Stub::NotFound);
@@ -96,19 +100,19 @@ fn name_not_found_still_spawns_the_child() {
         &[],
     );
 
-    assert_eq!(witnessed(&marker), "<unset>");
-    assert_eq!(outcome.exit_code, 7);
-    assert_eq!(outcome.state, State::Degraded);
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.exit_code, 64);
+    assert_eq!(outcome.state, State::Refused);
     assert_eq!(outcome.unresolved.len(), 2);
     // The exact banner shape the design calls for.
     assert!(
-        notes.contains("keyless: DEGRADED — 2 names unresolved: MISSING_ONE, MISSING_TWO"),
+        notes.contains("keyless: REFUSED — 2 of 2 names refused; the command was not run"),
         "banner was: {notes}"
     );
 }
 
 // ---------------------------------------------------------------------------
-// Property 3 of 4: the config file is unparseable.
+// Property 2 of 5: the config file is unparseable.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -152,7 +156,7 @@ fn corrupt_config_still_spawns_the_child() {
         // The defaulted config, with the backend pointed at a stub so no real
         // keychain is ever consulted by this suite.
         let mut config = load.config.clone();
-        config.stores.keychain.binary = stub_security(&dir, &Stub::NotFound).into();
+        config.stores.keychain.binary = stub_security(&dir, &Stub::Errors).into();
         let registry = store::build(&config, &Invocation::default()).registry;
 
         let warnings = vec![problem.to_string()];
@@ -174,7 +178,7 @@ fn corrupt_config_still_spawns_the_child() {
 }
 
 // ---------------------------------------------------------------------------
-// Property 4 of 4: every configured backend errors.
+// Property 3 of 5: every configured backend errors.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -202,7 +206,7 @@ fn every_store_adapter_erroring_still_spawns_the_child() {
 }
 
 // ---------------------------------------------------------------------------
-// Property 5 of 6: a coordinate the backend requires is missing.
+// Property 4 of 5: a coordinate the backend requires is missing.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -268,7 +272,7 @@ fn a_name_with_no_infisical_environment_still_spawns_the_child() {
 }
 
 // ---------------------------------------------------------------------------
-// Property 6 of 6: a pseudo-terminal cannot be allocated.
+// Property 5 of 5: a pseudo-terminal cannot be allocated.
 // ---------------------------------------------------------------------------
 
 #[test]

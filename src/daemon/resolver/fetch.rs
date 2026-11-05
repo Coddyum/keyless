@@ -182,10 +182,10 @@ impl Resolver {
                      a session cannot settle which of the daemon's stores a name means",
                     ambiguous.reason()
                 ),
-                // No store was asked, but the daemon's own config was —  and
-                // answered that this name cannot be resolved as configured,
-                // which is a position on the name, not silence about it.
-                kind: FailureKind::Verdict,
+                // No store was asked, so nothing is known about the name; what
+                // answered is the daemon's own config, and its fault is not the
+                // caller's to be refused for.
+                kind: FailureKind::Unrouted,
             },
             // A store declining the name itself is a position on it. The
             // daemon refuses a malformed name before its registry is asked, so

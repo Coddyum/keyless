@@ -93,7 +93,7 @@ fn an_ambiguous_name_says_which_config_file_can_settle_it() {
             assert!(reason.contains("keylessd"), "{reason}");
             assert!(reason.contains("stores.default"), "{reason}");
             assert!(!reason.contains("decoy-"), "the reason leaked a value");
-            assert_eq!(kind, FailureKind::Verdict);
+            assert_eq!(kind, FailureKind::Unrouted);
         }
         other => panic!("expected a failure naming the candidates, got {other:?}"),
     }

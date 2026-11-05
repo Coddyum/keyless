@@ -199,7 +199,7 @@ impl Registry {
         let undeclared = self.undeclared(name);
         let Some(chosen) = self.chosen_explicit(name) else {
             return if self.stores.is_empty() {
-                Resolution::NotFound { undeclared }
+                Resolution::Failed(vec![no_store_enabled()])
             } else {
                 Resolution::Ambiguous {
                     candidates: self
@@ -260,6 +260,10 @@ impl Registry {
             });
         }
 
+        if !asked_any && pinned.is_none() {
+            errors.push(no_store_enabled());
+        }
+
         if errors.is_empty() {
             Resolution::NotFound {
                 undeclared: self.undeclared(name),
@@ -282,5 +286,15 @@ impl Registry {
             },
             Err(error) => Resolution::Failed(vec![error]),
         }
+    }
+}
+
+/// What a lookup reports when no store is enabled to ask. A gap in this
+/// machine's setup rather than a store's answer about the name, so it degrades
+/// a run where an absence refuses it.
+fn no_store_enabled() -> StoreError {
+    StoreError::Unavailable {
+        store: "keyless".to_owned(),
+        detail: "no store is enabled; enable one under `stores` in the config file".to_owned(),
     }
 }

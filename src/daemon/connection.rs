@@ -223,7 +223,7 @@ impl Connection {
                     request,
                     attestation,
                     Decision::new("absent"),
-                    State::Degraded,
+                    State::Refused,
                     None,
                     served,
                 );
@@ -231,16 +231,25 @@ impl Connection {
             }
             Outcome::Failed { reason, kind } => {
                 let route = self.catalogue.route(&request.name);
+                let unknown = refuses(kind, &route);
                 self.record(
                     request,
                     attestation,
                     Decision::new(kind.as_str()),
-                    State::Degraded,
+                    if unknown {
+                        State::Refused
+                    } else {
+                        State::Degraded
+                    },
                     None,
                     served,
                 );
                 let advice = self.catalogue.advice(&request.name, &route);
-                Reply::Failed(format!("{reason}; {advice}"))
+                if unknown {
+                    Reply::Refused(format!("{reason}; {advice}"))
+                } else {
+                    Reply::Failed(format!("{reason}; {advice}"))
+                }
             }
         };
         (reply, advisory)
@@ -296,4 +305,17 @@ impl Connection {
             },
         }
     }
+}
+
+/// Whether a failed lookup is a name its store does not hold, which refuses
+/// the run, rather than a failure to answer, which degrades it.
+///
+/// Both halves are needed. The store took a position on the name, so this is
+/// not silence; and the catalogue, rebuilt on this very miss, routes nothing
+/// under it, so the position was about the name's existence rather than about
+/// an item that is there and could not be read. A name the catalogue routes
+/// whose store still declined it, a catalogue ambiguity, and every silence
+/// keep degrading.
+fn refuses(kind: FailureKind, route: &Route) -> bool {
+    kind == FailureKind::Verdict && matches!(route, Route::Unknown { .. })
 }

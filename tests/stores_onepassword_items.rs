@@ -14,7 +14,7 @@ use support::{
 use stores_support::{ONEPASSWORD_DECOY_BY_TITLE, last_op_verb, onepassword_config, registry_from};
 
 #[test]
-fn a_title_absent_from_the_vault_is_an_absence_and_never_reaches_run() {
+fn a_title_absent_from_the_vault_is_refused_and_never_reaches_run() {
     // The listing says the item is not there, so there is nothing to resolve
     // and the vendor is not asked to try. `NotFound` rather than a vendor
     // error, so `doctor` sends the reader to the vault and not to the login.
@@ -35,8 +35,8 @@ fn a_title_absent_from_the_vault_is_an_absence_and_never_reaches_run() {
         &[],
     );
 
-    assert_eq!(outcome.state, State::Degraded);
-    assert_eq!(witnessed(&marker), "<unset>");
+    assert_eq!(outcome.state, State::Refused);
+    assert!(!marker.exists(), "the child started: {notes}");
     assert!(notes.contains("not found in any store"), "{notes}");
     assert_eq!(
         last_op_verb(&dir),

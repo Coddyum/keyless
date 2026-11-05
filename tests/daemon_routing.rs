@@ -79,6 +79,9 @@ fn json_path(path: &std::path::Path) -> String {
 
 /// Resolve `DECOY` through a real daemon and a real client, and report what
 /// the child actually received plus everything the caller was told.
+/// What [`through_the_daemon`] reports as seen when the child never started.
+const NEVER_STARTED: &str = "<never started>";
+
 fn through_the_daemon(config: &DaemonConfig, dir: &std::path::Path) -> (State, String, String) {
     let running = start_daemon(config, policy_allowing_self());
     let client = client_config(running.socket(), 3_000);
@@ -101,15 +104,20 @@ fn through_the_daemon(config: &DaemonConfig, dir: &std::path::Path) -> (State, S
     .expect("run");
 
     drop(running);
+    let seen = if marker.exists() {
+        witnessed(&marker)
+    } else {
+        NEVER_STARTED.to_owned()
+    };
     (
         outcome.state,
-        witnessed(&marker),
+        seen,
         String::from_utf8_lossy(&notes).into_owned(),
     )
 }
 
 #[test]
-fn a_name_the_daemon_does_not_hold_is_absent_rather_than_undeclared() {
+fn a_name_the_daemon_does_not_hold_is_refused_as_absent_rather_than_undeclared() {
     // A client config under the daemon declares nothing about where a name
     // lives — the daemon's config decides that — so "you never declared it"
     // would send this reader to edit the one file that has no say. The absence
@@ -122,8 +130,8 @@ fn a_name_the_daemon_does_not_hold_is_absent_rather_than_undeclared() {
     write_secrets(&config.stores.file.path, &[("NEIGHBOUR", DECOY_VALUE)]);
     let (state, seen, notes) = through_the_daemon(&config, &dir);
 
-    assert_eq!(state, State::Degraded);
-    assert_eq!(seen, "<unset>");
+    assert_eq!(state, State::Refused);
+    assert_eq!(seen, NEVER_STARTED);
     assert!(
         notes.contains("not found in any store"),
         "the daemon's absence lost its wording: {notes}"

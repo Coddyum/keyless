@@ -84,7 +84,7 @@ fn a_proton_value_reaches_the_child_and_nothing_else() {
 }
 
 #[test]
-fn an_unset_name_is_reported_as_missing_rather_than_as_a_broken_store() {
+fn an_unset_name_is_refused_as_missing_rather_than_degraded_as_a_broken_store() {
     // Measured: the CLI reports a non-zero child as `failed to wait for command
     // termination: exit status N`, and its own failures carry different
     // wording. Getting this backwards sends a user hunting a broken login when
@@ -96,8 +96,9 @@ fn an_unset_name_is_reported_as_missing_rather_than_as_a_broken_store() {
 
     let (outcome, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 4), &[]);
 
-    assert_eq!(outcome.state, State::Degraded);
-    assert_eq!(outcome.exit_code, 4);
+    assert_eq!(outcome.state, State::Refused);
+    assert_eq!(outcome.exit_code, 64);
+    assert!(!marker.exists(), "the child started: {notes}");
     assert!(
         notes.contains("not found in any store"),
         "an unset name must read as absent, not as a failure: {notes}"
