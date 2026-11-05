@@ -1,6 +1,8 @@
 mod config_paths_support;
 mod support;
 
+use std::path::Path;
+
 use keyless::paths::ConfigPath;
 
 use config_paths_support::{Fixture, stderr_of, stdout_of};
@@ -118,5 +120,21 @@ fn the_readme_never_advises_a_config_path_this_build_refuses() {
     // it is the one surface no runtime check can reach. Bound to the parser
     // here, so a `~user/…` or `$HOME/…` written into an example fails the suite
     // rather than teaching somebody the defect.
-    assert_advice_is_accepted("README.md", include_str!("../README.md"), 20);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut pages = vec![root.join("README.md")];
+    for entry in std::fs::read_dir(root.join("docs/guide")).expect("docs/guide is readable") {
+        pages.push(entry.expect("a directory entry").path());
+    }
+    let mut advised = 0;
+    for page in &pages {
+        let text = std::fs::read_to_string(page)
+            .unwrap_or_else(|error| panic!("cannot read {}: {error}", page.display()));
+        assert_advice_is_accepted(&page.display().to_string(), &text, 0);
+        advised += config_values_advised(&text).len();
+    }
+    assert!(
+        advised >= 20,
+        "the README and its guide pages hold only {advised} config values, so the scan has \
+         stopped reading them"
+    );
 }
