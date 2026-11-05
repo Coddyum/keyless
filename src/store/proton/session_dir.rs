@@ -31,8 +31,10 @@ pub(super) const NO_SESSION_DIR: &str = "`stores.proton.session_dir` is not set,
 ///
 /// This is the same defect the tilde bug was — one config, a different session
 /// per working directory — and it is just as invisible, so it must not be
-/// silent. It must also not block: `keyless run` never refuses, and a config
-/// typo is a poor place to acquire the first exception. So a lookup fails as
+/// silent. It must also not block: `keyless run` never blocks on a store's or
+/// the daemon's failure, and refuses only a name its store does not hold, an
+/// empty name, or a caller that fails attestation. A config typo is none of
+/// those, so a lookup fails as
 /// [`StoreError::Unavailable`], `run` names the name it could not resolve and
 /// still spawns the child, and `doctor` — which calls the same function from
 /// [`ProtonStore::health`] — reports `store proton PROBLEM …` instead of `ok`.

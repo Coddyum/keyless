@@ -122,8 +122,6 @@ impl Store for DaemonStore {
         match self.client.request(&Request::resolve(name)) {
             Ok(Reply::Value(secret)) => Ok(Some(secret)),
             Ok(Reply::Absent) => Ok(None),
-            // The daemon answered: this caller may not have the value. That is
-            // a verdict, not silence, so it refuses the run like a bad name.
             Ok(Reply::Denied(reason) | Reply::Refused(reason)) => Err(StoreError::Refused {
                 store: self.id().to_owned(),
                 detail: reason,

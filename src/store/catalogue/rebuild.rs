@@ -154,8 +154,8 @@ impl Rebuilder {
     ///
     /// Anything short of a verdict is [`Rebuilt::Silent`]: the wait running
     /// out, a store that could not be enumerated, or one that failed within
-    /// [`REBUILD_RETRY_FLOOR`]. An unreachable store must never read as a name
-    /// it does not hold.
+    /// [`REBUILD_RETRY_FLOOR`]. A store's silence must never read as a name it
+    /// does not hold.
     pub fn rebuild_for(&self, name: &str, within: Duration) -> Rebuilt {
         let deadline = Instant::now() + within;
         let catalogue = &self.engine.catalogue;

@@ -4,13 +4,15 @@
 //! is the whole reason the resolution policy in [`super`] refuses to guess which
 //! store a name belongs to.
 //!
-//! # Status: observed against `pass-cli` 2.2.5, 2026-08-08
+//! # Status: observed against `pass-cli` 2.7.0, 2026-11-05
 //!
 //! The argv this adapter builds, the reference format it passes through, the
 //! session scoping below and the vendor's masking were all exercised against
 //! the real CLI on macOS (Homebrew, `pass-cli` 2.2.5) against a live account,
-//! using disposable decoy items. `run --env-file <FILE> --no-masking --
-//! <COMMAND>` exists with exactly that spelling, and `agent create` exists too.
+//! using disposable decoy items, and proven again on 2.7.0 by `keyless doctor
+//! --probe` and a fresh read of an item and of one of its fields. `run
+//! --env-file <FILE> --no-masking -- <COMMAND>` exists with exactly that
+//! spelling, and `agent create` exists too.
 //!
 //! One requirement the code cannot check and a user must plan for: **an agent
 //! token needs Pass Plus or higher.** The free tier is excluded, so a free

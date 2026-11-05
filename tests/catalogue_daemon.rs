@@ -107,9 +107,6 @@ fn an_item_added_after_the_daemon_started_injects_on_its_first_run() {
     let client = client_config(running.socket(), 3_000);
     let registry = build(&client, &Invocation::default()).registry;
 
-    // The daemon enumerates FIRST, so the index it holds predates the item.
-    // Without that the case is vacuous: a daemon that has never listed would
-    // list on the first miss whatever the rule for a stale index is.
     wait_until_served(running.socket(), "DECOY");
     settle(&dir);
     assert_eq!(

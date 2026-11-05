@@ -106,8 +106,9 @@ impl Store for ProtonStore {
     /// The premise was wrong in one word: **free**. A degraded lookup is only
     /// observable to somebody already reading stderr of a run that is failing
     /// for a reason they do not yet know. `doctor` is the command they are told
-    /// to run to find that reason out, and `keyless run` never refuses, so a
-    /// dead session has no other alarm anywhere on the machine. A health check
+    /// to run to find that reason out, and `keyless run` never blocks on a
+    /// store's failure, so a dead session has no other alarm anywhere on the
+    /// machine. A health check
     /// that cannot see the single most common way this backend dies is not a
     /// cheaper check, it is a check of something else.
     ///

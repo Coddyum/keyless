@@ -22,7 +22,7 @@
 //!
 //! No `--value`, no `--secret`, no positional value. An argument is readable
 //! from the process table for as long as the process lives — the CLI-flag
-//! shape, one of the four `docs/guide/why-this-exists.md` names.
+//! shape, one of the four ways a value leaks.
 //! Offering the flag guarantees it gets used, so the flag does not exist —
 //! structurally, the same way `run` has no `--reveal`.
 //!
