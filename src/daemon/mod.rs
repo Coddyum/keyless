@@ -114,13 +114,16 @@ pub struct Daemon {
     /// Every name this daemon can serve — the operator's declarations, and
     /// whatever the enumerable stores mint. See [`crate::store::catalogue`].
     catalogue: Arc<Catalogue>,
-    /// Keeps that index current, off the request path.
+    /// Keeps that index current.
     ///
     /// Held behind an `Arc` and handed to every connection, because a miss is
     /// the only thing that starts a rebuild and a miss happens on a connection
     /// thread. Its worker stops when the last of those `Arc`s drops, which is
     /// when the accept thread lets go of the daemon.
     rebuilder: Arc<Rebuilder>,
+    /// How long a miss waits on the rebuild it started: the timeout of the one
+    /// store that mints names.
+    rebuild_within: Duration,
     idle: Duration,
     live: Arc<AtomicUsize>,
     /// Shared with the stores this daemon resolves through, and with the
@@ -188,6 +191,7 @@ impl Daemon {
             ),
             catalogue,
             rebuilder,
+            rebuild_within: Duration::from_millis(config.stores.proton.timeout_ms),
             idle: config.idle_timeout(),
             live: Arc::new(AtomicUsize::new(0)),
             generations,

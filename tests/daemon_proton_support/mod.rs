@@ -80,6 +80,14 @@ pub fn vendor_list_argv(dir: &Path) -> std::path::PathBuf {
     dir.join("pass-cli.list.argv")
 }
 
+/// Where the stand-in records the reference a `run` read out of its env file.
+///
+/// Written by `run` alone, the one verb that reads a value. The catalogue's own
+/// enumeration (`vault list`, `item list`, `info`) never writes it.
+pub fn vendor_reference(dir: &Path) -> std::path::PathBuf {
+    dir.join("pass-cli.reference")
+}
+
 /// The stand-in agent token. Distinct from every other decoy here, and long
 /// enough that a grep for it in any output means a real leak.
 pub const TOKEN_DECOY: &str = "decoy-Pat8-agent-token-never-real-0606";

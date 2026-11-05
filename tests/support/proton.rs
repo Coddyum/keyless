@@ -244,7 +244,9 @@ pub fn stub_pass_cli_catalogue(
          if [ \"$1\" = 'vault' ] && [ \"$2\" = 'list' ]; then\n\
          \x20 echo one >> '{vault_count}'; cat '{vaults}'; exit 0; fi\n\
          if [ \"$1\" = 'item' ] && [ \"$2\" = 'list' ]; then\n\
-         \x20 echo one >> '{list_count}'; cat '{listing}'; exit 0; fi\n\
+         \x20 echo one >> '{list_count}'\n\
+         \x20 if [ -e '{pause}' ]; then sleep \"$(cat '{pause}')\"; fi\n\
+         \x20 cat '{listing}'; exit 0; fi\n\
          if [ \"$1\" = 'item' ] && [ \"$2\" = 'view' ]; then\n\
          \x20 echo one >> '{view_count}'; cat '{view}'; exit 0; fi\n\
          {tail}",
@@ -255,9 +257,16 @@ pub fn stub_pass_cli_catalogue(
         vault_count = dir.join("pass-cli.vault.count").display(),
         list_count = dir.join("pass-cli.list.count").display(),
         view_count = dir.join("pass-cli.view.count").display(),
+        pause = dir.join("listing.pause").display(),
         tail = vendor_run_tail(dir, behaviour),
     );
     write_stub(dir, "pass-cli-catalogue-stub", &body)
+}
+
+/// Make every later `item list` sleep `seconds` before it answers.
+pub fn pause_catalogue_listing(dir: &Path, seconds: u64) {
+    std::fs::write(dir.join("listing.pause"), seconds.to_string())
+        .expect("write the listing pause");
 }
 
 /// Change what `item list` answers, while the daemon keeps running.

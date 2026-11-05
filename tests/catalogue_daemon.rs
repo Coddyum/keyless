@@ -16,72 +16,18 @@
 mod catalogue_daemon_support;
 mod support;
 
-use std::path::Path;
-use std::time::{Duration, Instant};
-
-use keyless::store::{Invocation, Resolution, build};
+use keyless::State;
+use keyless::store::{Invocation, Registry, Resolution, build};
 
 use catalogue_daemon_support::{
-    DECOY, ONE_VAULT, arm, daemon_over, listing, listing_of, wait_until_served,
+    DECOY, ONE_VAULT, arm, daemon_over, last_decision, listing, listing_of, run_named, settle,
+    wait_until_served,
 };
 use support::backend::Backend;
 use support::client::{client_config, write_secrets};
 use support::daemon::{daemon_config, policy_allowing_self, start_daemon};
-use support::proton::{set_catalogue_listing, stub_pass_cli_catalogue};
+use support::proton::{pause_catalogue_listing, set_catalogue_listing, stub_pass_cli_catalogue};
 use support::scratch;
-
-/// How long the vendor tallies must sit still before a rebuild is called done.
-///
-/// Sized against ONE gap: a rebuild is a `vault list` and then one `item list`
-/// per vault, so the longest a running rebuild can leave the tallies unmoved is
-/// the time to spawn one stub process. The worker's idle wait is unbounded and
-/// wakes on its condvar, so there is no polling interval to cover any more —
-/// this was 750 ms against a 250 ms `WORKER_POLL` that no longer exists, and it
-/// stays there as headroom for a loaded machine rather than as a number derived
-/// from anything.
-///
-/// A ceiling, never a measurement: a machine slower than this goes RED at the
-/// deadline in [`settle`] rather than green.
-const QUIET: Duration = Duration::from_millis(750);
-
-/// Wait until no rebuild is running or pending.
-///
-/// # Why waiting for the NAME is not enough
-///
-/// `wait_until_served` returns the moment an index containing the name exists,
-/// which says nothing about whether another rebuild is still in flight — and
-/// while no index exists at all, every `Op::Names` the poll sends queues one.
-/// A test that mutated the vault at that point could have its change read by a
-/// rebuild it did not ask for, and its first resolve would then HIT: the case
-/// would report a pass having proved nothing about the retry.
-///
-/// The observable is the stub's own spawn tallies. Two conditions together:
-/// the two counts are EQUAL, which rules out a rebuild sitting between its
-/// vault listing and its item listing, and neither has moved for [`QUIET`],
-/// which rules out one starting. After that the only producers left are a
-/// resolve miss and an `Op::Names` over a daemon with no index, and the caller
-/// controls both.
-fn settle(dir: &Path) {
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        let before = (
-            support::proton::vault_list_count(dir),
-            support::proton::listing_count(dir),
-        );
-        std::thread::sleep(QUIET);
-        let after = (
-            support::proton::vault_list_count(dir),
-            support::proton::listing_count(dir),
-        );
-        if before == after && after.0 == after.1 {
-            return;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the vendor tallies never settled: {before:?} then {after:?}"
-        );
-    }
-}
 
 #[test]
 fn ls_over_an_empty_session_config_prints_what_the_daemon_serves() {
@@ -147,9 +93,7 @@ fn a_daemon_that_cannot_answer_leaves_the_local_listing_standing() {
 }
 
 #[test]
-fn an_item_added_after_the_daemon_started_is_usable_after_one_retry() {
-    // C1, and the whole point of the effort: no `sudo`, no restart, and no
-    // edit to a root-owned config between the miss and the value.
+fn an_item_added_after_the_daemon_started_injects_on_its_first_run() {
     let dir = scratch("catalogue-new-item");
     let vendor = stub_pass_cli_catalogue(
         &dir,
@@ -163,24 +107,11 @@ fn an_item_added_after_the_daemon_started_is_usable_after_one_retry() {
     let client = client_config(running.socket(), 3_000);
     let registry = build(&client, &Invocation::default()).registry;
 
-    // The daemon enumerates FIRST, so the listing it holds is already cached
-    // when the vault changes. Without that the case is vacuous: a rebuild with
-    // nothing cached fetches fresh whatever the rules are, and the defect this
-    // is written against is a rebuild reading a listing older than the question
-    // that queued it. At the crate's default TTL that is a full minute of a
-    // daemon unable to learn what it was started to learn.
+    // The daemon enumerates FIRST, so the index it holds predates the item.
+    // Without that the case is vacuous: a daemon that has never listed would
+    // list on the first miss whatever the rule for a stale index is.
     wait_until_served(running.socket(), "DECOY");
-    // And then until nothing is still enumerating. Rewriting the fixture under
-    // a rebuild that is already running lets it read the new listing, and the
-    // first resolve below then HITS — the assertion would fail, correctly,
-    // having proved nothing.
     settle(&dir);
-    // One enumeration, not one per poll. `Op::Names` asks for a rebuild
-    // whenever it finds no index, and the worker clears the request when it
-    // TAKES it — so without the in-flight guard every poll of the wait above
-    // bought another whole vault walk, and each of those is a permanent
-    // off-machine audit entry. It is also what made this case racy: a second
-    // rebuild still running when the fixture changed read the new listing.
     assert_eq!(
         support::proton::vault_list_count(&dir),
         1,
@@ -191,25 +122,99 @@ fn an_item_added_after_the_daemon_started_is_usable_after_one_retry() {
     // not signalled, not restarted, and its config is not touched.
     set_catalogue_listing(&dir, &listing_of(&["decoy", "decoy alpha"]));
 
-    // The first ask misses — the index was built before the item existed.
-    let first = registry.resolve("DECOY_ALPHA");
-    assert!(
-        !matches!(first, Resolution::Found { .. }),
-        "the fixture must start from a genuine miss: {}",
-        arm(&first)
+    let (outcome, seen) = run_named(&registry, &dir, "DECOY_ALPHA");
+    assert_eq!(seen, DECOY, "the child did not get the new item's value");
+    assert_eq!(outcome.state, State::Injected);
+    assert_eq!(
+        last_decision(&dir, "DECOY_ALPHA").as_deref(),
+        Some("allow"),
+        "the daemon's own row must say it served the name"
     );
+}
 
-    // That miss is what queues the rebuild. Once it lands, the name is served.
-    let served = wait_until_served(running.socket(), "DECOY_ALPHA");
-    assert!(served.contains(&"DECOY".to_owned()), "{served:?}");
+/// A daemon whose index predates the item `decoy alpha`, which the vault now
+/// holds behind a listing that takes `pause` seconds to answer.
+fn stale_index(
+    label: &str,
+    timeout_ms: u64,
+    pause: u64,
+) -> (std::path::PathBuf, keyless::daemon::Running, Registry) {
+    let dir = scratch(label);
+    let vendor = stub_pass_cli_catalogue(
+        &dir,
+        &Backend::Injects(DECOY),
+        ONE_VAULT,
+        &listing_of(&["decoy"]),
+        "{}",
+    );
+    let mut config = daemon_over(&dir, &vendor);
+    config.stores.proton.timeout_ms = timeout_ms;
+    let running = start_daemon(&config, policy_allowing_self());
+    let registry = build(
+        &client_config(running.socket(), 3_000),
+        &Invocation::default(),
+    )
+    .registry;
+    wait_until_served(running.socket(), "DECOY");
+    settle(&dir);
+    set_catalogue_listing(&dir, &listing_of(&["decoy", "decoy alpha"]));
+    pause_catalogue_listing(&dir, pause);
+    (dir, running, registry)
+}
 
-    match registry.resolve("DECOY_ALPHA") {
-        Resolution::Found { secret, store } => {
-            assert_eq!(secret.expose(), DECOY);
-            assert_eq!(store, "daemon");
-        }
-        other => panic!("the retry after the rebuild must resolve: {}", arm(&other)),
-    }
+#[test]
+fn concurrent_misses_on_one_stale_index_cost_one_listing() {
+    let (dir, _running, registry) = stale_index("catalogue-coalesce", 60_000, 1);
+    let before = support::proton::vault_list_count(&dir);
+
+    let runs = 6;
+    let gate = std::sync::Barrier::new(runs);
+    let seen: Vec<String> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..runs)
+            .map(|nth| {
+                let (registry, dir, gate) = (&registry, &dir, &gate);
+                scope.spawn(move || {
+                    let marker = dir.join(format!("concurrent-{nth}.marker"));
+                    gate.wait();
+                    support::run_with(
+                        registry,
+                        &["DECOY_ALPHA"],
+                        &support::witness(&marker, "DECOY_ALPHA", 0),
+                        &[],
+                    );
+                    support::witnessed(&marker)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("a run panicked"))
+            .collect()
+    });
+
+    assert!(seen.iter().all(|value| value == DECOY), "{seen:?}");
+    assert_eq!(
+        support::proton::vault_list_count(&dir) - before,
+        1,
+        "{runs} concurrent misses must share one listing"
+    );
+}
+
+#[test]
+fn a_rebuild_with_no_verdict_in_time_is_silence_and_not_an_unknown_name() {
+    let (dir, _running, registry) = stale_index("catalogue-rebuild-silent", 1_000, 10);
+
+    let (outcome, seen) = run_named(&registry, &dir, "DECOY_ALPHA");
+    assert_eq!(
+        seen, "<unset>",
+        "the child must still run, without the value"
+    );
+    assert_eq!(outcome.state, State::Degraded);
+    assert_eq!(
+        last_decision(&dir, "DECOY_ALPHA").as_deref(),
+        Some("store-silent"),
+        "a rebuild nobody answered must read as silence"
+    );
 }
 
 #[test]
