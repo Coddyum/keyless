@@ -264,7 +264,18 @@ pub struct Source {
     pub mint: Box<dyn Mint + Send + Sync>,
 }
 
-/// Keeps the catalogue's derived index up to date, off the request path.
+/// What a miss's rebuild came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rebuilt {
+    /// The catalogue now holds what the store says about this name.
+    Current,
+    /// The store gave no verdict in time, or failed a moment ago: nothing is
+    /// known about whether the name exists.
+    Silent,
+}
+
+/// Keeps the catalogue's derived index up to date, for the miss that waits on
+/// it.
 ///
 /// # Why a miss drives this and a clock does not
 ///
@@ -282,7 +293,7 @@ pub struct Rebuilder {
     /// offer. Same shape as the resolver's.
     ///
     /// Behind a `Mutex` because a `Receiver` is `Send` and not `Sync`, and this
-    /// handle is shared with every connection thread so a miss can queue from
+    /// handle is shared with every connection thread so a miss can ask from
     /// where a miss happens. Only [`Drop`] ever touches it.
     done: Mutex<std::sync::mpsc::Receiver<Never>>,
     handle: Option<JoinHandle<()>>,

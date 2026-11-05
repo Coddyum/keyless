@@ -81,6 +81,7 @@ impl Daemon {
             audit: Arc::clone(&self.audit),
             catalogue: Arc::clone(&self.catalogue),
             rebuilder: Arc::clone(&self.rebuilder),
+            rebuild_within: self.rebuild_within,
             idle: self.idle,
             live: Arc::clone(&self.live),
             token_expires: self.token_expires.clone(),
