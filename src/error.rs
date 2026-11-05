@@ -72,6 +72,17 @@ impl StoreError {
             | StoreError::Refused { store, .. } => store,
         }
     }
+
+    /// The cause, without the `store `x`` prefix `Display` adds for a log line.
+    #[must_use]
+    pub fn detail(&self) -> &str {
+        match self {
+            StoreError::Unavailable { detail, .. }
+            | StoreError::Backend { detail, .. }
+            | StoreError::Misconfigured { detail, .. }
+            | StoreError::Refused { detail, .. } => detail,
+        }
+    }
 }
 
 impl fmt::Display for StoreError {

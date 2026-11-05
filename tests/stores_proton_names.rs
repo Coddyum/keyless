@@ -16,6 +16,8 @@ use support::{
 
 use stores_support::{PROTON_REFERENCE, registry_from};
 
+const EX_USAGE: i32 = 64;
+
 // ---------------------------------------------------------------------------
 // The name form: a stable address, resolved to this session's ids at lookup.
 //
@@ -116,7 +118,7 @@ fn a_named_item_is_addressed_by_the_ids_this_session_minted() {
 }
 
 #[test]
-fn a_trashed_item_never_resolves_and_the_command_still_runs() {
+fn a_trashed_item_is_refused_and_the_command_never_runs() {
     // Resolving one would hand the child a value its owner believes they
     // deleted — and silently, since a trashed item is still listed. The `run`
     // verb must never be reached.
@@ -131,12 +133,9 @@ fn a_trashed_item_never_resolves_and_the_command_still_runs() {
 
     let (outcome, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 17), &[]);
 
-    assert_eq!(witnessed(&marker), "<unset>", "a trashed item was injected");
-    assert_eq!(
-        outcome.exit_code, 17,
-        "the child's exit code must come back"
-    );
-    assert_eq!(outcome.state, State::Degraded);
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.exit_code, EX_USAGE, "{notes}");
+    assert_eq!(outcome.state, State::Refused);
     assert!(notes.contains("DECOY"), "{notes}");
     assert!(notes.contains("trash"), "the banner must say why: {notes}");
     assert!(
@@ -182,7 +181,7 @@ fn two_live_items_with_one_title_degrade_and_name_the_candidates() {
 }
 
 #[test]
-fn a_title_that_is_in_no_vault_degrades_and_still_runs() {
+fn a_title_that_is_in_no_vault_is_refused_and_the_command_never_runs() {
     // The negative control for the three above: with an empty listing they
     // could all pass on an adapter that never resolves anything at all.
     let dir = scratch("proton-no-such-item");
@@ -192,13 +191,41 @@ fn a_title_that_is_in_no_vault_degrades_and_still_runs() {
 
     let (outcome, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 11), &[]);
 
-    assert_eq!(witnessed(&marker), "<unset>");
-    assert_eq!(outcome.exit_code, 11);
-    assert_eq!(outcome.state, State::Degraded);
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.exit_code, EX_USAGE, "{notes}");
+    assert_eq!(outcome.state, State::Refused);
     assert!(notes.contains("keyless-decoy-alpha"), "{notes}");
     assert!(
         !notes.contains("trash"),
         "nothing was in the trash: {notes}"
+    );
+}
+
+#[test]
+fn a_name_with_no_proton_address_is_refused_and_the_command_never_runs() {
+    let dir = scratch("proton-no-address");
+    let marker = dir.join("witness");
+    let stub = stub_pass_cli_listing(
+        &dir,
+        &Backend::Injects(PROTON_DECOY),
+        &Listing::Json(ONE_LIVE_ITEM),
+    );
+    let registry = registry_from(&named_config(&stub, DECOY_BY_NAME), &Reason::default());
+
+    let (outcome, notes) = run_with(
+        &registry,
+        &["NEVER_DECLARED"],
+        &witness(&marker, "NEVER_DECLARED", 9),
+        &[],
+    );
+
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.exit_code, EX_USAGE, "{notes}");
+    assert_eq!(outcome.state, State::Refused);
+    assert!(notes.contains("NEVER_DECLARED"), "{notes}");
+    assert!(
+        !dir.join("pass-cli.argv").exists(),
+        "a name with no address was read from anyway"
     );
 }
 
@@ -353,12 +380,12 @@ fn a_listing_older_than_its_ttl_is_fetched_again_before_it_is_trusted() {
     // not about how long a machine took to get here.
     std::thread::sleep(Duration::from_millis(250));
 
+    std::fs::remove_file(&marker).expect("clear the first run's witness");
     let (second, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 19), &[]);
 
-    assert_eq!(
-        witnessed(&marker),
-        "<unset>",
-        "a trashed item was injected out of a listing that predates the trashing"
+    assert!(
+        !marker.exists(),
+        "a run went ahead on a listing that predates the trashing: {notes}"
     );
     assert_eq!(
         listing_count(&dir),
@@ -366,8 +393,8 @@ fn a_listing_older_than_its_ttl_is_fetched_again_before_it_is_trusted() {
         "the vault was never listed again, so nothing in this process can ever \
          learn that an item was trashed"
     );
-    assert_eq!(second.exit_code, 19, "the child's exit code must come back");
-    assert_eq!(second.state, State::Degraded);
+    assert_eq!(second.exit_code, EX_USAGE, "{notes}");
+    assert_eq!(second.state, State::Refused);
     assert!(notes.contains("trash"), "the banner must say why: {notes}");
 }
 

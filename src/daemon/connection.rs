@@ -203,7 +203,7 @@ impl Connection {
             age: answer.age,
         });
 
-        let reply = match answer.outcome {
+        let (decision, state, reply) = match answer.outcome {
             Outcome::Found(secret) => {
                 self.record(
                     request,
@@ -216,48 +216,42 @@ impl Connection {
                 // One more copy of the plaintext, which the reply owns and
                 // zeroizes when it is dropped. The `Arc` in the cache keeps
                 // the original.
-                Reply::Value(Secret::new(secret.expose().to_owned()))
-            }
-            Outcome::Absent => {
-                self.record(
-                    request,
-                    attestation,
-                    Decision::new("absent"),
-                    State::Refused,
-                    None,
-                    served,
+                return (
+                    Reply::Value(Secret::new(secret.expose().to_owned())),
+                    advisory,
                 );
-                Reply::Absent
             }
-            Outcome::Failed { reason, kind } => {
-                let route = self.catalogue.route(&request.name);
-                let unknown = refuses(kind, &route);
-                self.record(
-                    request,
-                    attestation,
-                    Decision::new(kind.as_str()),
-                    if unknown {
-                        State::Refused
-                    } else {
-                        State::Degraded
-                    },
-                    None,
-                    served,
-                );
-                let advice = self.catalogue.advice(&request.name, &route);
-                if unknown {
-                    Reply::Refused(format!("{reason}; {advice}"))
-                } else {
-                    Reply::Failed(format!("{reason}; {advice}"))
-                }
-            }
+            Outcome::Absent => (
+                Decision::new("absent"),
+                State::Refused,
+                self.absence(&request.name),
+            ),
+            Outcome::Failed { reason, kind } => (
+                Decision::new(kind.as_str()),
+                State::Degraded,
+                Reply::Failed(format!("{reason}; {}", self.advice(&request.name))),
+            ),
         };
+        self.record(request, attestation, decision, state, None, served);
         (reply, advisory)
     }
 
-    /// Resolve `name`, and when its store answered without a value for a name
-    /// the catalogue does not route, rebuild the catalogue and resolve once
-    /// more before answering.
+    fn advice(&self, name: &str) -> String {
+        self.catalogue.advice(name, &self.catalogue.route(name))
+    }
+
+    fn absence(&self, name: &str) -> Reply {
+        match self.catalogue.suggestion(name, &self.catalogue.route(name)) {
+            Some(suggestion) => {
+                Reply::Refused(format!("its store holds no such name; {suggestion}"))
+            }
+            None => Reply::Absent,
+        }
+    }
+
+    /// Resolve `name`, and when its store answered that it does not hold a
+    /// name the catalogue does not route, rebuild the catalogue and resolve
+    /// once more before answering.
     ///
     /// # Why the catalogue is consulted AFTER the resolve and never before it
     ///
@@ -272,21 +266,18 @@ impl Connection {
     /// serving names it serves today, and the index would look correct while
     /// doing it.
     ///
-    /// # Why a silent store skips the rebuild, and a silent rebuild is silence
+    /// # Why only an absence rebuilds, and a silent rebuild is silence
     ///
-    /// A store that gave no verdict said nothing about the name, so there is
-    /// nothing for a fresher index to correct. And a rebuild that gives no
-    /// verdict leaves the name's existence unknown: answering with the first
-    /// resolve's "no such name" would turn an unreachable vault into a name
-    /// it does not hold.
+    /// A store in silence, or one that failed, said nothing about the name, so
+    /// there is nothing for a fresher index to correct. And a rebuild that
+    /// gives no verdict leaves the name's existence unknown: answering with
+    /// the first resolve's "no such name" would turn a store's silence into a
+    /// name it does not hold.
     fn resolve_rebuilding(&self, name: &str) -> Answer {
         let answer = self.resolver.resolve(name);
-        let answered_without_value = match &answer.outcome {
-            Outcome::Found(_) => false,
-            Outcome::Absent => true,
-            Outcome::Failed { kind, .. } => *kind == FailureKind::Verdict,
-        };
-        if !answered_without_value || !matches!(self.catalogue.route(name), Route::Unknown { .. }) {
+        if !matches!(answer.outcome, Outcome::Absent)
+            || !matches!(self.catalogue.route(name), Route::Unknown { .. })
+        {
             return answer;
         }
         match self.rebuilder.rebuild_for(name, self.rebuild_within) {
@@ -305,17 +296,4 @@ impl Connection {
             },
         }
     }
-}
-
-/// Whether a failed lookup is a name its store does not hold, which refuses
-/// the run, rather than a failure to answer, which degrades it.
-///
-/// Both halves are needed. The store took a position on the name, so this is
-/// not silence; and the catalogue, rebuilt on this very miss, routes nothing
-/// under it, so the position was about the name's existence rather than about
-/// an item that is there and could not be read. A name the catalogue routes
-/// whose store still declined it, a catalogue ambiguity, and every silence
-/// keep degrading.
-fn refuses(kind: FailureKind, route: &Route) -> bool {
-    kind == FailureKind::Verdict && matches!(route, Route::Unknown { .. })
 }
