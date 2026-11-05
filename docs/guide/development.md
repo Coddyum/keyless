@@ -129,7 +129,7 @@ class:
 
 | suite | what it is for |
 |---|---|
-| `daemon.rs` | it works: injection, masking, single-flight, the chain under 20 concurrent sessions |
+| `daemon.rs`, `daemon_connection.rs` | it works: injection, masking, single-flight, the chain under 20 concurrent sessions |
 | `daemon_degraded.rs` | the never-block invariant, once per way a daemon can fail |
 | `attestation.rs` | the attacks, each with a control proving the machinery still works |
 

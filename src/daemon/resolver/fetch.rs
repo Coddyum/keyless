@@ -143,7 +143,7 @@ impl Resolver {
             // exactly the same thing and differs only in the sentence printed
             // afterwards — `12a3896` changed that sentence, never the ordering,
             // which is why there is no refusal on the session side for this one
-            // to be missing. `tests/daemon.rs` holds that down by watching the
+            // to be missing. `tests/daemon_routing.rs` holds that down by watching the
             // store be asked, because it is not readable from here.
             Resolution::NotFound { .. } => Outcome::Absent,
             Resolution::Failed(errors) => {

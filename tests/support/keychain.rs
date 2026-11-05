@@ -121,3 +121,25 @@ pub fn slow_store_stub(dir: &Path, value: &str, millis: u64) -> PathBuf {
     );
     install_executable(&dir.join("security-slow"), &body)
 }
+
+/// A `security` stand-in that answers instantly the first time and sleeps
+/// past `seconds` on every call after, so a refresh queued behind the first
+/// answer cannot land inside the refresh grace.
+pub fn slow_after_first_store_stub(dir: &Path, value: &str, seconds: u64) -> PathBuf {
+    let counter = dir.join("calls.count");
+    let body = format!(
+        "#!/bin/sh\n\
+         count=$(cat '{counter}' 2>/dev/null || echo 0)\n\
+         count=$((count + 1))\n\
+         echo \"$count\" > '{counter}'\n\
+         case \"$1\" in\n\
+         \x20 list-keychains) echo '\"/tmp/stub.keychain-db\"'; exit 0 ;;\n\
+         \x20 find-generic-password)\n\
+         \x20\x20\x20 if [ \"$count\" -gt 1 ]; then sleep {seconds}; fi\n\
+         \x20\x20\x20 printf '%s\\n' '{value}'; exit 0 ;;\n\
+         esac\n\
+         exit 1\n",
+        counter = counter.display(),
+    );
+    install_executable(&dir.join("security-slow-after-first"), &body)
+}

@@ -209,7 +209,7 @@ fn a_vendor_slower_than_the_grace_leaves_the_held_value_in_front_of_the_caller()
 #[test]
 fn a_cold_read_slower_than_the_clients_own_deadline_still_reaches_the_caller() {
     // The Proton adapter's own version of the outage the heartbeat closed. It
-    // is worth asking here as well as at `tests/daemon.rs`'s keychain stub,
+    // is worth asking here as well as at `tests/daemon_connection.rs`'s keychain stub,
     // because a cold Proton lookup is TWO vendor children — the vault listing,
     // then the read — so the latency a caller waits out is their sum, and that
     // sum is what was measured overrunning a session's deadline.
