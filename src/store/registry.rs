@@ -7,6 +7,9 @@ use super::{Registry, Resolution, Store};
 use crate::config::Policy;
 use crate::error::StoreError;
 
+/// Why an empty name is refused, in the words the refused banner prints.
+const EMPTY_NAME: &str = "the name is empty, so it names nothing to look up";
+
 impl Resolution {
     /// Whether a value came back.
     #[must_use]
@@ -44,6 +47,7 @@ impl Resolution {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join("; "),
+            Resolution::Refused { reason } => reason.clone(),
             Resolution::Ambiguous { candidates } => format!(
                 "{} stores could answer ({}) and none is pinned; \
                  add \"store\" to this name, or set \"stores.default\"",
@@ -129,11 +133,29 @@ impl Registry {
     }
 
     /// Ask for `name`, under the configured policy.
+    ///
+    /// An empty name is refused whatever the backends say: it can only come
+    /// from a substitution that expanded to nothing, and a child started
+    /// without the credential it named fails somewhere harder to read. A
+    /// backend that [judges names](Store::judges_names) is still asked, so
+    /// the refusal reaches its log too.
     #[must_use]
     pub fn resolve(&self, name: &str) -> Resolution {
-        match self.policy {
+        if name.is_empty() && !self.stores.iter().any(|store| store.judges_names()) {
+            return Resolution::Refused {
+                reason: EMPTY_NAME.to_owned(),
+            };
+        }
+        let resolution = match self.policy {
             Policy::Explicit => self.resolve_explicit(name),
             Policy::Ordered => self.resolve_ordered(name),
+        };
+        match resolution {
+            Resolution::Refused { .. } => resolution,
+            _ if name.is_empty() => Resolution::Refused {
+                reason: EMPTY_NAME.to_owned(),
+            },
+            _ => resolution,
         }
     }
 
@@ -222,6 +244,11 @@ impl Registry {
                     };
                 }
                 Ok(None) => {}
+                Err(error @ StoreError::Refused { .. }) => {
+                    return Resolution::Refused {
+                        reason: error.to_string(),
+                    };
+                }
                 Err(error) => errors.push(error),
             }
         }
@@ -250,6 +277,9 @@ impl Registry {
                 secret,
             },
             Ok(None) => Resolution::NotFound { undeclared },
+            Err(error @ StoreError::Refused { .. }) => Resolution::Refused {
+                reason: error.to_string(),
+            },
             Err(error) => Resolution::Failed(vec![error]),
         }
     }

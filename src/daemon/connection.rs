@@ -147,7 +147,7 @@ impl Connection {
                 request,
                 attestation,
                 Decision::with_reason(denial.kind(), &detail),
-                State::Degraded,
+                State::Refused,
                 None,
                 None,
             );
@@ -185,12 +185,12 @@ impl Connection {
                 request,
                 attestation,
                 Decision::new("bad-name"),
-                State::Degraded,
+                State::Refused,
                 None,
                 None,
             );
             return (
-                Reply::Failed(format!(
+                Reply::Refused(format!(
                     "a name must be between 1 and {MAX_NAME_CHARS} characters"
                 )),
                 advisory,

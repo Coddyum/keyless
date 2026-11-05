@@ -20,7 +20,7 @@ pub(super) fn failing_row(config: &Config, id: &str, error: &StoreError) -> Stor
         // One line of the config file, and nothing was contacted.
         StoreError::Misconfigured { .. } => (Mark::NotSetUp, "config"),
         // Installed, reached, and saying no.
-        StoreError::Backend { .. } => (Mark::Broken, "broken"),
+        StoreError::Backend { .. } | StoreError::Refused { .. } => (Mark::Broken, "broken"),
     };
     StoreRow {
         id: id.to_owned(),
@@ -39,7 +39,8 @@ fn detail_of(error: &StoreError) -> String {
     match error {
         StoreError::Unavailable { detail, .. }
         | StoreError::Backend { detail, .. }
-        | StoreError::Misconfigured { detail, .. } => detail.clone(),
+        | StoreError::Misconfigured { detail, .. }
+        | StoreError::Refused { detail, .. } => detail.clone(),
     }
 }
 

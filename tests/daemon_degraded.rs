@@ -17,6 +17,10 @@
 //! Plus a fourth that matters as much: nothing the daemon does may cause a
 //! value to appear anyway. A degraded run has no local fallback to reach for,
 //! by construction — see `store::build`.
+//!
+//! One case is the exception that marks the boundary: a daemon that answers
+//! and refuses the caller has not failed, so that run is refused, not
+//! degraded.
 
 mod support;
 
@@ -336,16 +340,25 @@ fn a_daemon_claiming_success_with_no_value_degrades() {
 
 #[cfg(any(target_os = "macos", keyless_force_xnu))]
 #[test]
-fn a_daemon_that_refuses_the_caller_degrades() {
-    // A refused attestation must look exactly like every other failure from
-    // `run`'s point of view: warn, and run the command anyway.
+fn a_daemon_that_refuses_the_caller_refuses_the_run_and_never_starts_the_child() {
+    // The one daemon answer that is not a failure: it answered, and the answer
+    // is that this caller may not have the value. Running the command anyway
+    // would pass that verdict off as an outage.
     let dir = scratch("daemon-denied");
     let config = support::daemon::daemon_config(&dir);
     support::client::write_secrets(&config.stores.file.path, &[("DECOY", DECOY_VALUE)]);
     let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_nobody());
 
     let marker = dir.join("marker");
-    assert_degraded_but_ran("denied", running.socket(), &marker);
+    let (outcome, notes) = run_against(running.socket(), &marker, 7);
+
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.state, State::Refused, "{notes}");
+    assert_eq!(outcome.exit_code, 64, "{notes}");
+    assert!(
+        notes.contains("REFUSED"),
+        "the caller was not told; stderr was `{notes}`"
+    );
 
     drop(running);
     let _ = std::fs::remove_dir_all(&dir);

@@ -1,4 +1,5 @@
-//! Asking the stores for every requested name, and sorting what came back.
+//! Asking the stores for every requested name, and sorting what came back by
+//! what each answer does to the run.
 
 use std::io::Write;
 use std::thread;
@@ -8,13 +9,44 @@ use crate::NAME;
 use crate::secret::Secret;
 use crate::store::{Registry, Resolution};
 
-/// What the stores answered, split into what injects and what degrades.
+/// What a run does about one name, read off the store's verdict on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fate {
+    /// The value goes into the child's environment.
+    Inject,
+    /// The child runs without the value: nothing was decided about the name.
+    Degrade,
+    /// The child never starts: a store declined the request itself.
+    Refuse,
+}
+
+/// The one place a verdict becomes a fate.
+///
+/// Only a store's position on the request refuses: a name it will not look up,
+/// or a caller it will not serve. Silence, an unreachable or misbehaving
+/// daemon, an ambiguity in routing and a name no store holds all degrade, and
+/// a verdict that should refuse instead moves its arm here and nowhere else.
+fn fate(resolution: &Resolution) -> Fate {
+    match resolution {
+        Resolution::Found { .. } => Fate::Inject,
+        Resolution::Refused { .. } => Fate::Refuse,
+        Resolution::NotFound { .. } | Resolution::Failed(_) | Resolution::Ambiguous { .. } => {
+            Fate::Degrade
+        }
+    }
+}
+
+/// What the stores answered, split into what injects, what degrades and what
+/// refuses.
 pub(super) struct Gathered {
     pub(super) resolved: Vec<(Vec<String>, Secret)>,
     pub(super) injected_names: Vec<String>,
     pub(super) unresolved: Vec<String>,
     pub(super) reasons: Vec<String>,
     pub(super) identities: Vec<String>,
+    /// One line per refused request, as the caller spelled it. Any entry
+    /// refuses the whole run.
+    pub(super) refusals: Vec<String>,
 }
 
 /// Resolve every request and sort each answer by whether it can be injected.
@@ -32,12 +64,17 @@ pub(super) fn gather(
     // so the row says `<store> (reader)` and a row that ever said `(manager)`
     // could not have come from here.
     let mut identities: Vec<String> = Vec::new();
+    let mut refusals: Vec<String> = Vec::new();
 
     for ((binding, plan), resolution) in request.bindings.iter().zip(plans).zip(resolve_all(
         request.registry,
         request.bindings,
         notes,
     )) {
+        if fate(&resolution) == Fate::Refuse {
+            refusals.push(format!("`{}`: {}", binding.spelled(), resolution.reason()));
+            continue;
+        }
         match resolution {
             Resolution::Found { store, secret } => {
                 let usable = !secret.expose().as_bytes().contains(&0);
@@ -77,6 +114,7 @@ pub(super) fn gather(
         unresolved,
         reasons,
         identities,
+        refusals,
     }
 }
 

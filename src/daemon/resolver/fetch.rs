@@ -187,6 +187,13 @@ impl Resolver {
                 // which is a position on the name, not silence about it.
                 kind: FailureKind::Verdict,
             },
+            // A store declining the name itself is a position on it. The
+            // daemon refuses a malformed name before its registry is asked, so
+            // this arm is a local backend's own refusal.
+            refused @ Resolution::Refused { .. } => Outcome::Failed {
+                reason: refused.reason(),
+                kind: FailureKind::Verdict,
+            },
         };
         // Everything that reaches here is the store's own answer about the
         // name, including an ambiguity, which is this daemon's config saying

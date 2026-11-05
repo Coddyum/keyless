@@ -105,6 +105,18 @@ pub trait Store: Send + Sync {
     fn advisory(&self) -> Option<String> {
         None
     }
+
+    /// Whether this backend decides for itself which names are malformed,
+    /// and records the refusal where its owner reads it.
+    ///
+    /// `false` for every local backend: a registry never hands one an empty
+    /// name, because what a vendor CLI makes of an empty argument is anyone's
+    /// guess. `true` for [`daemon::DaemonStore`], whose daemon refuses an
+    /// empty or over-long name and writes that refusal to its own audit log —
+    /// a log the caller cannot edit, which is why the registry still asks.
+    fn judges_names(&self) -> bool {
+        false
+    }
 }
 
 /// What the registry concluded about one name.
@@ -145,6 +157,13 @@ pub enum Resolution {
     /// At least one backend could not answer. Carries every error, so `doctor`
     /// and the degraded banner can say which backend failed and why.
     Failed(Vec<StoreError>),
+    /// A backend declined the request itself: the name names nothing any
+    /// lookup could find, or the caller is not one it will serve. Carries why,
+    /// for the refused banner. Never contains a value.
+    Refused {
+        /// The rule the request broke, and who applied it.
+        reason: String,
+    },
     /// Several backends could have meant this name and none was chosen.
     ///
     /// No backend was asked. See the module documentation for why guessing here

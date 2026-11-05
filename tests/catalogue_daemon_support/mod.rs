@@ -90,6 +90,7 @@ pub fn arm(resolution: &Resolution) -> &'static str {
         Resolution::NotFound { .. } => "not-found",
         Resolution::Failed { .. } => "failed",
         Resolution::Ambiguous { .. } => "ambiguous",
+        Resolution::Refused { .. } => "refused",
     }
 }
 

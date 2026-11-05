@@ -54,7 +54,8 @@ impl ProtonManager {
             // variant is a compile error to be considered, not a silent join.
             crate::error::StoreError::Unavailable { store, detail }
             | crate::error::StoreError::Backend { store, detail }
-            | crate::error::StoreError::Misconfigured { store, detail } => {
+            | crate::error::StoreError::Misconfigured { store, detail }
+            | crate::error::StoreError::Refused { store, detail } => {
                 ManageError::Unavailable { store, detail }
             }
         }

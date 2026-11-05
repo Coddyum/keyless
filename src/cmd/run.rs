@@ -6,13 +6,17 @@
 //!
 //! # The invariant
 //!
-//! This function spawns the child on every path where a child can exist. There
-//! is no early return for a missing store, an unknown name, a corrupt config,
-//! or a backend that errors — each of those sets [`State::Degraded`], writes one
-//! line to stderr, and continues to the spawn. The only two ways out without a
-//! child are [`RunError::NoCommand`] (nothing was asked for) and
-//! [`RunError::SpawnFailed`] (the command does not exist), and neither is this
-//! tool declining to run something it could have run.
+//! This function spawns the child on every path where a failure is not the
+//! caller's. There is no early return for a missing store, an unknown name, a
+//! corrupt config, or a backend that errors — each of those sets
+//! [`State::Degraded`], writes one line to stderr, and continues to the spawn.
+//!
+//! The one deliberate way out without a child is a refused run: a store
+//! declined the request itself — a name no lookup could find, or a caller the
+//! daemon will not serve. That sets [`State::Refused`] and returns
+//! [`EXIT_REFUSED`]; `resolve::fate` decides which verdicts refuse. The other
+//! two are [`RunError::NoCommand`] (nothing was asked for) and
+//! [`RunError::SpawnFailed`] (the command does not exist).
 //!
 //! The reason is not politeness. A tool that occasionally blocks the work gets
 //! removed, and what comes back is the plaintext literal on the command line.
@@ -76,6 +80,10 @@ use variables::{deconflict, quoting_warnings};
 
 /// How many backend failure reasons to print under the degraded banner.
 const MAX_REASONS_SHOWN: usize = 3;
+
+/// The exit code of a refused run: `EX_USAGE`, because the request was wrong
+/// and the child never started, so no exit code of its own exists.
+pub const EXIT_REFUSED: i32 = 64;
 
 /// How `run` decides whether the child gets a pseudo-terminal.
 ///
@@ -206,6 +214,7 @@ pub fn run(request: RunRequest<'_>, notes: &mut dyn Write) -> Result<Outcome, Ru
         mut unresolved,
         reasons,
         identities,
+        refusals,
     } = gather(&request, plans, notes);
 
     // Read after every resolve above has had its turn, never before: a
@@ -239,6 +248,10 @@ pub fn run(request: RunRequest<'_>, notes: &mut dyn Write) -> Result<Outcome, Ru
             .zip(&injected_names)
             .map(|((_, secret), name)| (name.as_str(), secret)),
     ));
+
+    if !refusals.is_empty() {
+        return Ok(refuse(&request, &refusals, &masker, notes));
+    }
 
     if state == State::Degraded {
         let _ = writeln!(
@@ -389,4 +402,48 @@ pub fn run(request: RunRequest<'_>, notes: &mut dyn Write) -> Result<Outcome, Ru
         injected: injected_names,
         unresolved,
     })
+}
+
+/// End a run whose request a store declined, without starting its child.
+///
+/// Every name is reported unresolved, the ones that did resolve included:
+/// refusal is all or nothing, so none of them reached a child.
+fn refuse(
+    request: &RunRequest<'_>,
+    refusals: &[String],
+    masker: &Masker,
+    notes: &mut dyn Write,
+) -> Outcome {
+    let state = State::Refused;
+    let _ = writeln!(
+        notes,
+        "{NAME}: {state} — {} of {} names refused; the command was not run",
+        refusals.len(),
+        request.bindings.len() + request.unusable.len()
+    );
+    for refusal in refusals {
+        let _ = writeln!(notes, "{NAME}:   {refusal}");
+    }
+
+    let unresolved: Vec<String> = request
+        .unusable
+        .iter()
+        .cloned()
+        .chain(request.bindings.iter().map(|binding| binding.name.clone()))
+        .collect();
+    if let Some(log) = request.audit {
+        let event = Event::new("run", state, Vec::new(), request.argv, masker)
+            .with_unresolved(unresolved.clone())
+            .with_exit_code(EXIT_REFUSED);
+        if let Err(error) = log.append(&event) {
+            let _ = writeln!(notes, "{NAME}: warning: {error}");
+        }
+    }
+
+    Outcome {
+        state,
+        exit_code: EXIT_REFUSED,
+        injected: Vec::new(),
+        unresolved,
+    }
 }
