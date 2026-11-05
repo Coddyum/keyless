@@ -121,6 +121,10 @@ pub enum Reply {
     Absent,
     /// The caller was not authorised. Carries a short, fixed reason.
     Denied(String),
+    /// The request names nothing a store could be asked for — an empty or
+    /// over-long name. Nothing was looked up, and no lookup would help, so the
+    /// caller should not start its child. Carries the rule the name broke.
+    Refused(String),
     /// The daemon could not answer. Carries a reason that never contains a
     /// value — it is built from a store's own error text, which this crate
     /// takes from stderr only.

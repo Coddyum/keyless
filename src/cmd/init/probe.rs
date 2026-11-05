@@ -34,7 +34,8 @@ pub(super) fn probe_one(base: &Config, id: &'static str) -> Finding {
                 // owner can supply. This is the normal answer for Infisical and
                 // Proton on a fresh machine, and it is not a fault.
                 crate::error::StoreError::Misconfigured { .. } => (Mark::NotSetUp, "config"),
-                crate::error::StoreError::Backend { .. } => (Mark::Broken, "broken"),
+                crate::error::StoreError::Backend { .. }
+                | crate::error::StoreError::Refused { .. } => (Mark::Broken, "broken"),
             };
             Finding {
                 store: id,
@@ -43,7 +44,8 @@ pub(super) fn probe_one(base: &Config, id: &'static str) -> Finding {
                 detail: match &error {
                     crate::error::StoreError::Unavailable { detail, .. }
                     | crate::error::StoreError::Backend { detail, .. }
-                    | crate::error::StoreError::Misconfigured { detail, .. } => detail.clone(),
+                    | crate::error::StoreError::Misconfigured { detail, .. }
+                    | crate::error::StoreError::Refused { detail, .. } => detail.clone(),
                 },
                 next: Some(setup_step(id)),
             }
