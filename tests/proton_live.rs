@@ -72,6 +72,9 @@
 //! so anyone with the account can reproduce them:
 //! the two vault-scoping tests, the four name-form tests, the two discovery tests
 //! and the viewer-role write refusal.
+//! Two of those name-form tests, the trashed title and the missing one, asserted
+//! a degraded run then and assert a refused one now; the refusal has not yet
+//! been observed live.
 //!
 //! **Six need a fixture that is a VALUE or a foreign share, and were not run in
 //! that session.** They panic naming the variable, which is the correct outcome —

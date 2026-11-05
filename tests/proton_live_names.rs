@@ -11,6 +11,8 @@ use keyless::State;
 use proton_live_support::{assert_is_expected, registry_from, required};
 use support::{run_with, scratch, witness, witnessed};
 
+const EX_USAGE: i32 = 64;
+
 // ---------------------------------------------------------------------------
 // The name form, against the real CLI.
 //
@@ -81,15 +83,17 @@ fn the_listing_carries_a_share_id_an_id_and_a_state_but_no_item_id() {
     }
 }
 
-/// 7. A trashed item does not resolve, and the command still runs.
+/// 7. A title whose only match is trashed refuses the run, and says why.
 ///
 /// The one rule this vault can prove for real today: `personal` holds exactly one
 /// item and it is in the trash. Resolving it would hand a child a value its
 /// owner believes they deleted, and a trashed item is still returned by
-/// `item list`, so nothing about the listing itself refuses it.
+/// `item list`, so nothing about the listing itself refuses it. The vault
+/// answered, so this is a name the store does not hold, not a store failure:
+/// the command never starts.
 #[test]
 #[ignore = "needs a live Proton Pass account and an agent token"]
-fn a_live_trashed_item_degrades_the_name_and_still_runs_the_command() {
+fn a_live_trashed_item_refuses_the_run_and_names_the_trash() {
     let dir = scratch("proton-live-trashed");
     let marker = dir.join("witness");
     let registry = registry_from(&named_live_config(
@@ -101,27 +105,24 @@ fn a_live_trashed_item_degrades_the_name_and_still_runs_the_command() {
 
     let (outcome, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 41), &[]);
 
-    assert_eq!(
-        witnessed(&marker),
-        "<unset>",
-        "a trashed item was resolved and injected"
-    );
-    assert_eq!(outcome.state, State::Degraded);
-    assert_eq!(
-        outcome.exit_code, 41,
-        "the child's exit code must come back"
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.state, State::Refused, "{notes}");
+    assert_eq!(outcome.exit_code, EX_USAGE, "{notes}");
+    assert!(
+        notes.contains("DECOY"),
+        "the banner must name the secret: {notes}"
     );
     assert!(notes.contains("trash"), "the banner must say why: {notes}");
 }
 
-/// 8. A title nothing in the vault carries degrades rather than guessing.
+/// 8. A title nothing in the vault carries refuses the run rather than guessing.
 ///
 /// The negative control for the two above: without it they could both pass on
 /// an adapter that never resolves a named address at all. The title is one this
 /// suite invents, so it cannot collide with anything a person created.
 #[test]
 #[ignore = "needs a live Proton Pass account and an agent token"]
-fn a_live_title_that_exists_nowhere_degrades_and_still_runs() {
+fn a_live_title_that_exists_nowhere_refuses_the_run() {
     let dir = scratch("proton-live-no-title");
     let marker = dir.join("witness");
     let registry = registry_from(&named_live_config(
@@ -133,9 +134,9 @@ fn a_live_title_that_exists_nowhere_degrades_and_still_runs() {
 
     let (outcome, notes) = run_with(&registry, &["DECOY"], &witness(&marker, "DECOY", 43), &[]);
 
-    assert_eq!(witnessed(&marker), "<unset>");
-    assert_eq!(outcome.state, State::Degraded);
-    assert_eq!(outcome.exit_code, 43);
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.state, State::Refused, "{notes}");
+    assert_eq!(outcome.exit_code, EX_USAGE, "{notes}");
     assert!(
         notes.contains("keyless-there-is-no-item-with-this-title"),
         "the banner must name the title it could not find: {notes}"
