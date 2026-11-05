@@ -41,12 +41,7 @@ pub(super) fn probe_one(base: &Config, id: &'static str) -> Finding {
                 store: id,
                 mark,
                 state,
-                detail: match &error {
-                    crate::error::StoreError::Unavailable { detail, .. }
-                    | crate::error::StoreError::Backend { detail, .. }
-                    | crate::error::StoreError::Misconfigured { detail, .. }
-                    | crate::error::StoreError::Refused { detail, .. } => detail.clone(),
-                },
+                detail: error.detail().to_owned(),
                 next: Some(setup_step(id)),
             }
         }

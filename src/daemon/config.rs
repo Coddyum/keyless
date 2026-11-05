@@ -267,13 +267,9 @@ const fn default_stale_seconds() -> u64 {
 /// minutes matches the listing cache's own ceiling.
 pub const MAX_CACHE_SECONDS: u64 = 900;
 
-/// A configured window in seconds, clamped to [`MAX_CACHE_SECONDS`].
-const fn bounded_cache_seconds(seconds: u64) -> u64 {
-    if seconds > MAX_CACHE_SECONDS {
-        MAX_CACHE_SECONDS
-    } else {
-        seconds
-    }
+/// A configured window in seconds, clamped to `ceiling`.
+const fn bounded_cache_seconds(seconds: u64, ceiling: u64) -> u64 {
+    if seconds > ceiling { ceiling } else { seconds }
 }
 
 /// Four hours: the shortest window that covered practically every silence
@@ -343,7 +339,10 @@ impl DaemonConfig {
     /// The freshness window: how long a value is served without asking.
     #[must_use]
     pub const fn ttl(&self) -> Duration {
-        Duration::from_secs(bounded_cache_seconds(self.cache_ttl_seconds))
+        Duration::from_secs(bounded_cache_seconds(
+            self.cache_ttl_seconds,
+            MAX_CACHE_SECONDS,
+        ))
     }
 
     /// The stale window: how long past freshness a value may still be served
@@ -356,7 +355,10 @@ impl DaemonConfig {
         if self.cache_ttl_seconds == 0 {
             return Duration::ZERO;
         }
-        Duration::from_secs(bounded_cache_seconds(self.cache_stale_seconds))
+        Duration::from_secs(bounded_cache_seconds(
+            self.cache_stale_seconds,
+            MAX_CACHE_SECONDS,
+        ))
     }
 
     /// The silent window: how old a value may be and still be served while
@@ -368,12 +370,10 @@ impl DaemonConfig {
         if self.cache_ttl_seconds == 0 {
             return Duration::ZERO;
         }
-        let seconds = if self.cache_silent_seconds > MAX_SILENT_SECONDS {
-            MAX_SILENT_SECONDS
-        } else {
-            self.cache_silent_seconds
-        };
-        Duration::from_secs(seconds)
+        Duration::from_secs(bounded_cache_seconds(
+            self.cache_silent_seconds,
+            MAX_SILENT_SECONDS,
+        ))
     }
 
     /// The per-connection idle timeout.

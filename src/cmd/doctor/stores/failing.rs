@@ -29,18 +29,8 @@ pub(super) fn failing_row(config: &Config, id: &str, error: &StoreError) -> Stor
         // The vendor's own words, so a reader knows which of the many ways this
         // backend fails they are looking at. Never its stdout; see
         // `crate::error`.
-        detail: detail_of(error),
+        detail: error.detail().to_owned(),
         action: Some(remedy(config, id, error)),
-    }
-}
-
-/// The cause, without the `store `x`` prefix `Display` adds for a log line.
-fn detail_of(error: &StoreError) -> String {
-    match error {
-        StoreError::Unavailable { detail, .. }
-        | StoreError::Backend { detail, .. }
-        | StoreError::Misconfigured { detail, .. }
-        | StoreError::Refused { detail, .. } => detail.clone(),
     }
 }
 
