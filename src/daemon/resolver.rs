@@ -235,6 +235,9 @@ pub struct Resolver {
     /// runs, or after a refresh could not reach the store. Zero disables stale
     /// serving, and a zero `ttl` disables it whatever this holds.
     stale: Duration,
+    /// How old a value may be and still be served once a store asked for it
+    /// gave no verdict within its timeout. Zero disables it.
+    silent: Duration,
     shared: Mutex<Shared>,
     /// Wakes a refresh worker when a name is queued, and on shutdown.
     work: Condvar,
@@ -269,6 +272,7 @@ impl Resolver {
             registry,
             ttl,
             stale: Duration::ZERO,
+            silent: Duration::ZERO,
             shared: Mutex::new(Shared::default()),
             work: Condvar::new(),
             stop: AtomicBool::new(false),
@@ -287,6 +291,17 @@ impl Resolver {
         self
     }
 
+    /// How old a value may be and still be served while its store is silent.
+    ///
+    /// Opens only after a fetch for the name ends in silence. A store that
+    /// answers wins over it, and a name the store disowned has already been
+    /// evicted, so it is never served from here.
+    #[must_use]
+    pub fn with_silent_window(mut self, silent: Duration) -> Self {
+        self.silent = silent;
+        self
+    }
+
     /// How many times a store has actually been asked.
     #[must_use]
     pub fn upstream_calls(&self) -> u64 {
@@ -299,17 +314,44 @@ impl Resolver {
     /// freshness window the value comes from memory and no store is asked;
     /// past it, within the stale window, a refresh is queued and this call
     /// waits [`REFRESH_GRACE`] for it before falling back to the older value;
-    /// with no entry, or one past both windows, a store is asked here.
+    /// with no entry, or one past both windows, a store is asked here — and
+    /// if it is silent, a value inside the silent window is served instead.
     pub fn resolve(&self, name: &str) -> Answer {
         if let Some(answer) = self.cached_answer(name) {
             return answer;
         }
         let fetched = self.fetch(name);
+        if fetched.is_silent()
+            && let Some(answer) = self.silent_answer(name)
+        {
+            return answer;
+        }
         Answer {
             outcome: fetched.outcome,
             source: Source::Store,
             age: None,
         }
+    }
+
+    /// The value held for `name`, when it is younger than the silent window.
+    fn silent_answer(&self, name: &str) -> Option<Answer> {
+        if self.ttl.is_zero() {
+            return None;
+        }
+        let shared = self.lock();
+        let cached = shared.cache.get(name)?;
+        let age = cached.at.elapsed();
+        (age < self.silent).then(|| Answer {
+            outcome: cached.outcome.clone(),
+            source: Source::Stale,
+            age: Some(age),
+        })
+    }
+
+    /// How long an entry stays in memory: until it is past every window that
+    /// could still serve it.
+    fn retention(&self) -> Duration {
+        (self.ttl + self.stale).max(self.silent)
     }
 
     /// The cached routes, or `None` when a store has to be asked here.

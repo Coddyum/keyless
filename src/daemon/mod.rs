@@ -180,7 +180,9 @@ impl Daemon {
             socket: config.socket.to_path_buf(),
             policy: Arc::new(policy),
             resolver: Arc::new(
-                Resolver::new(backends.registry, config.ttl()).with_stale_window(config.stale()),
+                Resolver::new(backends.registry, config.ttl())
+                    .with_stale_window(config.stale())
+                    .with_silent_window(config.silent()),
             ),
             audit: Arc::new(
                 AuditLog::new(config.audit.to_path_buf())

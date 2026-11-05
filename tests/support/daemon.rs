@@ -48,6 +48,8 @@ pub fn daemon_config(dir: &Path) -> DaemonConfig {
         // one that does not gets the pre-existing behaviour — a value is
         // served for its freshness window and then fetched again.
         cache_stale_seconds: 0,
+        // No silent window either, for the same reason.
+        cache_silent_seconds: 0,
         idle_timeout_seconds: 5,
         peer: PeerConfig::default(),
         stores: DaemonStores {

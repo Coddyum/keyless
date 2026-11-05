@@ -57,9 +57,10 @@ pub fn report(
     writeln!(
         out,
         "cache    {}s fresh in memory, then up to {}s more while a store cannot answer, \
-         never on disk",
+         and up to {}s old while it is silent, never on disk",
         config.ttl().as_secs(),
-        config.stale().as_secs()
+        config.stale().as_secs(),
+        config.silent().as_secs()
     )?;
 
     let mut sound = true;
