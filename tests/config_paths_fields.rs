@@ -182,25 +182,15 @@ fn no_config_field_is_declared_as_a_bare_path_buf() {
     // which compiles, runs, and silently reinstates the defect — the compiler
     // has no opinion about which of two path types was meant.
     //
-    // So the enforcement is here: the two config modules are read as SOURCE at
-    // compile time and every struct field of type `PathBuf` is reported. This
-    // is the only thing in the repository that can fail on a field nobody
-    // remembered to think about.
+    // So the enforcement is here: the two config modules are read as SOURCE,
+    // every file of a split module included, and every struct field of type
+    // `PathBuf` is reported. This is the only thing in the repository that can
+    // fail on a field nobody remembered to think about.
     //
     // Deliberately not a check on the whole crate: `PathBuf` is the right type
     // everywhere else, and a rule that fires on correct code gets deleted.
-    for (label, source) in [
-        ("src/config.rs", include_str!("../src/config.rs")),
-        (
-            "src/daemon/config.rs",
-            include_str!("../src/daemon/config.rs"),
-        ),
-    ] {
-        let offenders: Vec<&str> = source
-            .lines()
-            .map(str::trim)
-            .filter(|line| line.ends_with(": PathBuf,") || line.ends_with(": Option<PathBuf>,"))
-            .collect();
+    for (label, source) in config_module_sources() {
+        let offenders = path_buf_fields(&source);
         assert!(
             offenders.is_empty(),
             "{label} declares a path field as PathBuf, which skips tilde expansion \
@@ -209,16 +199,52 @@ fn no_config_field_is_declared_as_a_bare_path_buf() {
     }
 }
 
+fn config_module_sources() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for module in ["src/config", "src/daemon/config"] {
+        files.push(root.join(format!("{module}.rs")));
+        let Ok(entries) = std::fs::read_dir(root.join(module)) else {
+            continue;
+        };
+        let mut split: Vec<PathBuf> = entries
+            .map(|entry| entry.expect("a directory entry").path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+            .collect();
+        split.sort();
+        files.extend(split);
+    }
+    files
+        .into_iter()
+        .map(|path| {
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
+            let label = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            (label, source)
+        })
+        .collect()
+}
+
+fn path_buf_fields(source: &str) -> Vec<&str> {
+    source
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.ends_with(": PathBuf,") || line.ends_with(": Option<PathBuf>,"))
+        .collect()
+}
+
 #[test]
 fn the_offender_scan_can_actually_find_something() {
     // The negative control for the test above. A scan that matches nothing
     // because its pattern is wrong is indistinguishable from a clean module,
     // and it passes forever.
     let sample = "pub struct S {\n    pub a: ConfigPath,\n    pub b: PathBuf,\n    pub c: Option<PathBuf>,\n}";
-    let found: Vec<&str> = sample
-        .lines()
-        .map(str::trim)
-        .filter(|line| line.ends_with(": PathBuf,") || line.ends_with(": Option<PathBuf>,"))
-        .collect();
-    assert_eq!(found, vec!["pub b: PathBuf,", "pub c: Option<PathBuf>,"]);
+    assert_eq!(
+        path_buf_fields(sample),
+        vec!["pub b: PathBuf,", "pub c: Option<PathBuf>,"]
+    );
 }
