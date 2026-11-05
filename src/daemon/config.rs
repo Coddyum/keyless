@@ -77,11 +77,22 @@ pub struct DaemonConfig {
     /// zero `cache_ttl_seconds` turns both off, because a daemon told to cache
     /// nothing has nothing to serve stale.
     ///
-    /// This is the window a store's SILENCE opens. A store that answers ends
-    /// it either way: a value replaces the entry, and an answer that disowns it
-    /// — no such item, a refused token — evicts it.
+    /// This window opens on any refresh slower than a second, so it stays
+    /// short; a store's longer silence is `cache_silent_seconds`'s to cover.
+    /// A store that answers ends it either way: a value replaces the entry,
+    /// and an answer that disowns it — no such item, a refused token — evicts
+    /// it.
     #[serde(default = "default_stale_seconds")]
     pub cache_stale_seconds: u64,
+    /// How old a value may be and still be served once its store has fallen
+    /// silent: given no verdict within its timeout.
+    ///
+    /// Separate from the stale window, which opens on any slow refresh and so
+    /// also on a healthy store. This one opens only on silence, and never for a
+    /// name the store disowned. Zero turns it off, as does a zero
+    /// `cache_ttl_seconds`.
+    #[serde(default = "default_silent_seconds")]
+    pub cache_silent_seconds: u64,
     /// How long a connection may sit idle before it is dropped.
     #[serde(default = "default_idle_seconds")]
     pub idle_timeout_seconds: u64,
@@ -129,6 +140,7 @@ impl Default for DaemonConfig {
             audit: default_audit(),
             cache_ttl_seconds: default_ttl_seconds(),
             cache_stale_seconds: default_stale_seconds(),
+            cache_silent_seconds: default_silent_seconds(),
             idle_timeout_seconds: default_idle_seconds(),
             peer: PeerConfig::default(),
             stores: DaemonStores::default(),
@@ -264,6 +276,19 @@ const fn bounded_cache_seconds(seconds: u64) -> u64 {
     }
 }
 
+/// Four hours: the shortest window that covered practically every silence
+/// measured, where the last good value was at most that old.
+const fn default_silent_seconds() -> u64 {
+    4 * 60 * 60
+}
+
+/// The longest the silent window may be, whatever a config says.
+///
+/// A credential revoked while its store is silent keeps reaching children for
+/// this long, so it is bounded on the same rule as the other two windows: a
+/// config is not a trusted input.
+pub const MAX_SILENT_SECONDS: u64 = 24 * 60 * 60;
+
 const fn default_idle_seconds() -> u64 {
     15
 }
@@ -332,6 +357,23 @@ impl DaemonConfig {
             return Duration::ZERO;
         }
         Duration::from_secs(bounded_cache_seconds(self.cache_stale_seconds))
+    }
+
+    /// The silent window: how old a value may be and still be served while
+    /// its store is silent.
+    ///
+    /// Zero whenever caching itself is off, for the reason [`Self::stale`] is.
+    #[must_use]
+    pub const fn silent(&self) -> Duration {
+        if self.cache_ttl_seconds == 0 {
+            return Duration::ZERO;
+        }
+        let seconds = if self.cache_silent_seconds > MAX_SILENT_SECONDS {
+            MAX_SILENT_SECONDS
+        } else {
+            self.cache_silent_seconds
+        };
+        Duration::from_secs(seconds)
     }
 
     /// The per-connection idle timeout.

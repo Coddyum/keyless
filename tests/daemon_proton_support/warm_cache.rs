@@ -42,6 +42,15 @@ pub const TRANSPORT_FAILURE: &str =
 /// Enough of it to recognise in a degraded run's reason.
 pub const TRANSPORT_FRAGMENT: &str = "failed to connect to host";
 
+/// The vendor answering about the ITEM rather than about its own reach.
+///
+/// What makes this a verdict is that it is OUTSIDE the adapter's allowlist, not
+/// its wording — the allowlist holds the measured transport phrases and every
+/// other sentence is the account speaking about the name. The wording of the
+/// allowlist itself is pinned by that adapter's own unit tests; all a fixture
+/// here has to be is outside it.
+pub const ITEM_VERDICT: &str = "no item titled decoy is readable in vault company";
+
 /// The same daemon as [`daemon_config_with_proton`], with its cache turned on.
 ///
 /// The fixture next door pins `cache_ttl_seconds` at zero because every case
