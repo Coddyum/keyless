@@ -22,7 +22,7 @@ use catalogue_daemon_support::{
 };
 use support::backend::Backend;
 use support::client::client_config;
-use support::daemon::{policy_allowing_self, start_daemon};
+use support::daemon::{daemon_config, policy_allowing_self, start_daemon};
 use support::proton::stub_pass_cli_catalogue;
 use support::{scratch, witness};
 
@@ -136,7 +136,7 @@ fn a_misspelt_name_is_refused_with_the_nearest_served_names() {
     assert_eq!(ran.client_states, ["REFUSED"]);
     let row = daemon_row(&dir, "DECOY_ALPA");
     assert_eq!(row["state"], "REFUSED");
-    assert_eq!(row["decision"], "store-verdict");
+    assert_eq!(row["decision"], "absent");
 }
 
 /// One item's field view: a note and one extra field, `Expiry Date`.
@@ -168,4 +168,23 @@ fn a_field_the_item_lacks_is_refused_with_the_fields_it_has() {
         daemon_row(&dir, "DEMO_API_KEY__NO_SUCH_FIELD")["state"],
         "REFUSED"
     );
+}
+
+#[test]
+fn a_store_that_fails_degrades_and_the_child_runs() {
+    let dir = scratch("refused-malformed-file-store");
+    std::fs::write(dir.join("secrets.json"), "{ not json").expect("write a malformed store");
+    let running = start_daemon(&daemon_config(&dir), policy_allowing_self());
+    let registry = build(
+        &client_config(running.socket(), 3_000),
+        &Invocation::default(),
+    )
+    .registry;
+
+    let ran = run_recorded(&registry, &dir, "ANY_NAME");
+
+    assert!(ran.child_started, "the child never started: {}", ran.notes);
+    assert_eq!(ran.outcome.state, State::Degraded, "{}", ran.notes);
+    assert_eq!(ran.client_states, ["DEGRADED"]);
+    assert_eq!(daemon_row(&dir, "ANY_NAME")["state"], "DEGRADED");
 }

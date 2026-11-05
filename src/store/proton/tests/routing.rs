@@ -100,27 +100,10 @@ fn a_store_built_from_parts_carries_no_session_directory_until_it_is_given_one()
     // than the precondition above — the control that keeps the assertion
     // from passing for any reason at all.
     let pointed = store.in_session_dir(Some(std::path::PathBuf::from(SCOPED)));
-    let error = pointed
-        .resolve("A_NAME_NOBODY_EVER_DECLARED")
-        .expect_err("an undeclared name must not resolve");
-    assert!(
-        error.to_string().contains("no Proton address declared"),
-        "{error}"
-    );
-}
-
-#[test]
-fn a_name_with_no_proton_address_says_what_to_add() {
-    let store = store_from(&format!(
-        r#"{{"stores":{{"proton":{{"session_dir":"{SCOPED}"}}}},"secrets":{{"X":{{}}}}}}"#
+    assert!(matches!(
+        pointed.resolve("A_NAME_NOBODY_EVER_DECLARED"),
+        Ok(None)
     ));
-    let error = store
-        .resolve("X")
-        .expect_err("a Proton name needs an address");
-    let message = error.to_string();
-    for part in ["vault", "item", "field"] {
-        assert!(message.contains(part), "{message}");
-    }
 }
 
 // -----------------------------------------------------------------------

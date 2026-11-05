@@ -145,7 +145,7 @@ impl Resolver {
             // which is why there is no refusal on the session side for this one
             // to be missing. `tests/daemon_routing.rs` holds that down by watching the
             // store be asked, because it is not readable from here.
-            Resolution::NotFound { .. } => Outcome::Absent,
+            Resolution::NotFound { .. } | Resolution::Refused { .. } => Outcome::Absent,
             Resolution::Failed(errors) => {
                 // Read before the errors are flattened into one sentence: the
                 // variants are what say whether a store answered, and a string
@@ -182,17 +182,7 @@ impl Resolver {
                      a session cannot settle which of the daemon's stores a name means",
                     ambiguous.reason()
                 ),
-                // No store was asked, so nothing is known about the name; what
-                // answered is the daemon's own config, and its fault is not the
-                // caller's to be refused for.
                 kind: FailureKind::Unrouted,
-            },
-            // A store declining the name itself is a position on it. The
-            // daemon refuses a malformed name before its registry is asked, so
-            // this arm is a local backend's own refusal.
-            refused @ Resolution::Refused { .. } => Outcome::Failed {
-                reason: refused.reason(),
-                kind: FailureKind::Verdict,
             },
         };
         // Everything that reaches here is the store's own answer about the

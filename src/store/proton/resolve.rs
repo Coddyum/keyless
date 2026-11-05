@@ -27,21 +27,7 @@ impl Store for ProtonStore {
 
     fn resolve(&self, name: &str) -> Result<Option<Secret>, StoreError> {
         let Some(address) = self.routing.route(name) else {
-            // Deliberately an error rather than `Ok(None)`. "I was asked for a
-            // name I have no address for" is a config mistake with a specific
-            // fix, and reporting it as a plain absence would leave the user
-            // hunting in the vault for an item that was never named.
-            //
-            // Two configs reach this line — an entry with no address, and no
-            // entry at all — and this adapter cannot tell them apart, because
-            // both arrive as a name that is missing from `addresses`. So the
-            // fix names the FILE rather than an entry: told to add three fields
-            // "to its config entry", the reader of the second config goes
-            // looking for an entry that was never written.
-            return Err(self.backend(format!(
-                "no Proton address declared for `{name}`; \
-                 give it \"vault\", \"item\" and \"field\" under \"secrets\""
-            )));
+            return Ok(None);
         };
 
         // One pass spans every child this lookup may spawn — the listing
@@ -256,11 +242,11 @@ impl ProtonStore {
                 "{REFERENCE_SCHEME}{}/{}/{}",
                 only.share_id, only.id, address.field
             )),
-            Matched::None => Err(self.backend(format!(
+            Matched::None => Err(self.not_held(format!(
                 "vault `{}` holds no item titled `{}`",
                 address.vault, address.item
             ))),
-            Matched::OnlyTrashed => Err(self.backend(format!(
+            Matched::OnlyTrashed => Err(self.not_held(format!(
                 "the only item titled `{}` in vault `{}` is in the trash; \
                  restore it, or point `{name}` at a live item",
                 address.item, address.vault
@@ -278,6 +264,13 @@ impl ProtonStore {
                     .collect::<Vec<_>>()
                     .join(", ")
             ))),
+        }
+    }
+
+    fn not_held(&self, detail: String) -> StoreError {
+        StoreError::Refused {
+            store: Store::id(self).to_owned(),
+            detail,
         }
     }
 }

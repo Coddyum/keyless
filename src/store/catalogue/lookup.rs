@@ -144,39 +144,61 @@ impl Catalogue {
     /// caller who typed an item's own title sees which minted form was tried.
     #[must_use]
     pub fn advice(&self, name: &str, route: &Route) -> String {
+        self.suggestion(name, route)
+            .unwrap_or_else(|| self.unbound(name))
+    }
+
+    /// The advice, when it points somewhere: the names of the item behind
+    /// `name`, the stores minting it, the nearest served names, or the
+    /// spelling it was looked up under.
+    #[must_use]
+    pub fn suggestion(&self, name: &str, route: &Route) -> Option<String> {
+        let age = self.age();
+        let shown = shown(name);
+        if let Some(item) = self.invert(name) {
+            let names = self.item_names(&item);
+            if !names.is_empty() {
+                return Some(format!(
+                    "nothing is bound to {shown}; the item behind that name serves: {} ({age})",
+                    names.join(", ")
+                ));
+            }
+        }
+        match route {
+            Route::Ambiguous { stores, items } => Some(format!(
+                "{shown} is minted by {items} items across {} ({age}); declare it to say which",
+                stores.join(", ")
+            )),
+            Route::Unknown { nearest, .. } if !nearest.is_empty() => Some(format!(
+                "nothing is bound to {shown}; nearest served names: {} ({age})",
+                nearest.join(", ")
+            )),
+            _ if matches!(spelling(name), Cow::Owned(_)) => Some(self.unbound(name)),
+            _ => None,
+        }
+    }
+
+    fn unbound(&self, name: &str) -> String {
+        format!("nothing is bound to {} ({})", shown(name), self.age())
+    }
+
+    fn age(&self) -> String {
         // `checkout::ago` rather than a ladder of this module's own: it is the
         // one every other age in this tool is rendered through, its tiers are
         // pinned by tests, and it has a DAY tier — a second ladder that stopped
         // at hours would report a two-day-old index as `51h` beside a `2d`
         // everywhere else.
-        let age = self.indexed_at().map_or_else(
+        self.indexed_at().map_or_else(
             || "no index yet".to_owned(),
             |age| format!("indexed {}", crate::checkout::ago(age)),
-        );
-        let shown = match spelling(name) {
-            Cow::Owned(spelt) => format!("`{name}` (tried `{spelt}`)"),
-            Cow::Borrowed(_) => format!("`{name}`"),
-        };
-        if let Some(item) = self.invert(name) {
-            let names = self.item_names(&item);
-            if !names.is_empty() {
-                return format!(
-                    "nothing is bound to {shown}; the item behind that name serves: {} ({age})",
-                    names.join(", ")
-                );
-            }
-        }
-        match route {
-            Route::Ambiguous { stores, items } => format!(
-                "{shown} is minted by {items} items across {} ({age}); declare it to say which",
-                stores.join(", ")
-            ),
-            Route::Unknown { nearest, .. } if !nearest.is_empty() => format!(
-                "nothing is bound to {shown}; nearest served names: {} ({age})",
-                nearest.join(", ")
-            ),
-            _ => format!("nothing is bound to {shown} ({age})"),
-        }
+        )
+    }
+}
+
+fn shown(name: &str) -> String {
+    match spelling(name) {
+        Cow::Owned(spelt) => format!("`{name}` (tried `{spelt}`)"),
+        Cow::Borrowed(_) => format!("`{name}`"),
     }
 }
 
