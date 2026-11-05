@@ -9,9 +9,9 @@ use keyless::store::{self, Invocation};
 
 use daemon_proton_support::session_verbs::{LogoutAnswer, stub_with_session_verbs};
 use daemon_proton_support::warm_cache::{
-    FRESHNESS_SECONDS, PAST_FRESHNESS, STALE_SECONDS, TRANSPORT_FAILURE, TRANSPORT_FRAGMENT,
-    daemon_config_with_a_warm_cache, until_the_read_degrades, until_the_vendor_has_been_asked,
-    value_from,
+    FRESHNESS_SECONDS, ITEM_VERDICT, PAST_FRESHNESS, STALE_SECONDS, TRANSPORT_FAILURE,
+    TRANSPORT_FRAGMENT, daemon_config_with_a_warm_cache, until_the_read_degrades,
+    until_the_vendor_has_been_asked, value_from,
 };
 use daemon_proton_support::{DECLARED, LISTING};
 use support::backend::{Backend, NextCall, set_next_call, vendor_decoy};
@@ -19,15 +19,6 @@ use support::client::client_config;
 use support::daemon::{policy_allowing_self, start_daemon};
 use support::proton::{Listing, stub_pass_cli_listing};
 use support::scratch;
-
-/// The vendor answering about the ITEM rather than about its own reach.
-///
-/// What makes this a verdict is that it is OUTSIDE the adapter's allowlist, not
-/// its wording — the allowlist holds the measured transport phrases and every
-/// other sentence is the account speaking about the name. The wording of the
-/// allowlist itself is pinned by that adapter's own unit tests; all a fixture
-/// here has to be is outside it.
-const ITEM_VERDICT: &str = "no item titled decoy is readable in vault company";
 
 #[test]
 fn a_vendor_that_could_not_reach_the_service_leaves_the_value_being_served() {

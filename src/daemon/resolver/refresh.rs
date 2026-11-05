@@ -175,10 +175,10 @@ impl Resolver {
         }
     }
 
-    /// Drop every entry past both windows, so a value nobody reads again does
+    /// Drop every entry past every window, so a value nobody reads again does
     /// not sit in memory until something else evicts it.
     fn sweep(&self) {
-        let horizon = self.ttl + self.stale;
+        let horizon = self.retention();
         let mut shared = self.lock();
         shared
             .cache

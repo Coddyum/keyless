@@ -130,6 +130,15 @@ both off. So a vendor CLI that has gone slow costs a lookup a second rather than
 its whole latency, while a vendor that has revoked a credential still stops that
 credential dead on the first refresh that reaches it.
 
+**A store in silence still hands a run the last value it gave, for up to four
+hours.** When a store gives no verdict within its timeout, the daemon serves the
+value it last read for that name if that value is younger than
+`cache_silent_seconds` — 14400 by default, never more than **24 hours**, and `0`
+turns it off. The audit row says `source: "stale"` and carries the value's age.
+A store that answers always wins, and a name the store disowned has already been
+evicted, so it is never served from here. Past the window the run degrades as
+before.
+
 **Which of those two a failure is, the vendor's own words decide.** A failure
 naming a transport fault — the connection refused, the host unresolved, the
 socket reset — reached nobody, so it decides nothing about the item and the
