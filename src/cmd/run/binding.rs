@@ -18,9 +18,6 @@ impl Binding {
             Some((env, name)) => (env.trim(), name.trim()),
             None => (spec.trim(), spec.trim()),
         };
-        if name.is_empty() {
-            return Err(format!("`{spec}` names no secret"));
-        }
         if !is_valid_env_name(env) {
             return Err(format!(
                 "`{env}` is not a usable environment variable name (letters, digits and underscore, not starting with a digit)"
@@ -75,6 +72,18 @@ impl Binding {
             })
             .collect();
         Ok(binding)
+    }
+
+    /// The request as the caller spelled it, for a line on stderr.
+    ///
+    /// `ENV=NAME` when the two differ, so an empty name still shows up as
+    /// the `ENV=` the caller typed rather than as nothing at all.
+    pub(super) fn spelled(&self) -> String {
+        if self.env == self.name {
+            self.name.clone()
+        } else {
+            format!("{}={}", self.env, self.name)
+        }
     }
 
     /// Every variable this request would set, the spelled one first.

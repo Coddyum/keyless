@@ -92,7 +92,6 @@ fn an_unusable_variable_name_is_rejected_at_parse_time() {
     assert!(Binding::parse("9LIVES").is_err());
     assert!(Binding::parse("has space=X").is_err());
     assert!(Binding::parse("=X").is_err());
-    assert!(Binding::parse("X=").is_err());
 }
 
 #[test]

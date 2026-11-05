@@ -37,6 +37,7 @@ impl Reply {
             Reply::Value(_) => "ok",
             Reply::Absent => "absent",
             Reply::Denied(_) => "denied",
+            Reply::Refused(_) => "refused",
             Reply::Failed(_) => "failed",
             Reply::Info { .. } => "info",
             Reply::Working => "working",
@@ -69,7 +70,9 @@ impl Reply {
         };
         match self {
             Reply::Value(secret) => wire.value = Some(secret.expose().to_owned()),
-            Reply::Denied(reason) | Reply::Failed(reason) => wire.reason = Some(reason.clone()),
+            Reply::Denied(reason) | Reply::Refused(reason) | Reply::Failed(reason) => {
+                wire.reason = Some(reason.clone());
+            }
             Reply::Info { names } => wire.names.clone_from(names),
             Reply::Absent | Reply::Working => {}
         }
@@ -106,6 +109,7 @@ impl Reply {
             },
             "absent" => Reply::Absent,
             "denied" => Reply::Denied(wire.reason.take().unwrap_or_else(|| "refused".to_owned())),
+            "refused" => Reply::Refused(wire.reason.take().unwrap_or_else(|| "refused".to_owned())),
             "failed" => Reply::Failed(wire.reason.take().unwrap_or_else(|| "failed".to_owned())),
             "info" => Reply::Info {
                 names: std::mem::take(&mut wire.names),

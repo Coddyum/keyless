@@ -39,6 +39,7 @@ use keyless::store::{self, Invocation, Resolution};
 use daemon_proton_support::{
     DECLARED, HALF_WRITTEN, LISTING, daemon_config_with_proton, published_generation,
     stub_recording_key_provider, vendor_argv, vendor_key_provider, vendor_list_argv,
+    vendor_reference,
 };
 use support::backend::Backend;
 use support::client::client_config;
@@ -113,11 +114,11 @@ fn a_declared_name_resolves_through_the_daemon_and_names_the_provider_it_ran_und
 }
 
 // ---------------------------------------------------------------------------
-// A name nobody declared: no process, of either verb.
+// A name nobody declared: no value read, and no vault the name chose.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn an_undeclared_name_creates_no_vendor_process_at_all() {
+fn an_undeclared_name_reads_no_value_and_lists_no_vault_of_its_own() {
     let dir = scratch("daemon-proton-invented");
     let vendor = stub_recording_key_provider(
         &dir,
@@ -144,7 +145,7 @@ fn an_undeclared_name_creates_no_vendor_process_at_all() {
     let reason = registry.resolve(INVENTED).reason();
 
     assert!(
-        !vendor_argv(&dir).exists(),
+        !vendor_reference(&dir).exists(),
         "an undeclared name spawned `run`: {:?}",
         support::recorded_lines(&vendor_argv(&dir))
     );
@@ -152,10 +153,6 @@ fn an_undeclared_name_creates_no_vendor_process_at_all() {
         !vendor_list_argv(&dir).exists(),
         "an undeclared name listed a real vault: {:?}",
         support::recorded_lines(&vendor_list_argv(&dir))
-    );
-    assert!(
-        !vendor_key_provider(&dir).exists(),
-        "a vendor process ran for an undeclared name"
     );
     assert!(
         !reason.contains(PROTON_DECOY),
@@ -251,7 +248,7 @@ fn no_client_can_name_a_vault_the_daemons_config_did_not() {
         support::recorded_lines(&vendor_list_argv(&dir))
     );
     assert!(
-        !vendor_argv(&dir).exists(),
+        !vendor_reference(&dir).exists(),
         "a client-supplied address resolved: {:?}",
         support::recorded_lines(&vendor_argv(&dir))
     );

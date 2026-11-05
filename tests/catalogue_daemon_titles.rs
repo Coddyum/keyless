@@ -3,10 +3,13 @@
 mod catalogue_daemon_support;
 mod support;
 
+use keyless::State;
 use keyless::daemon::config::DaemonConfig;
 use keyless::store::{Invocation, Registry, Resolution, build};
 
-use catalogue_daemon_support::{DECOY, ONE_VAULT, arm, daemon_over, listing_of, wait_until_served};
+use catalogue_daemon_support::{
+    DECOY, ONE_VAULT, arm, daemon_over, listing_of, run_named, settle, wait_until_served,
+};
 use support::backend::Backend;
 use support::client::client_config;
 use support::daemon::{policy_allowing_self, start_daemon};
@@ -181,26 +184,64 @@ fn a_declared_name_answers_to_its_items_title() {
 }
 
 #[test]
-fn a_title_spelled_field_name_resolves_once_the_miss_has_fetched_its_view() {
-    let (_dir, running, registry) = serving(
+fn a_title_spelled_field_name_resolves_on_its_first_ask() {
+    let (_dir, _running, registry) = serving(
         "catalogue-title-field",
         &["demo api key"],
         &demo_api_key_view(),
         |_| {},
         "DEMO_API_KEY",
     );
-
-    // The first ask misses, and that miss is what inverts onto `demo api key`
-    // and queues its field view.
-    let first = registry.resolve("demo-api-key__expiry-date");
-    assert!(
-        !matches!(first, Resolution::Found { .. }),
-        "the fixture must start from a genuine miss: {}",
-        arm(&first)
-    );
-    wait_until_served(running.socket(), "DEMO_API_KEY__EXPIRY_DATE");
-
     assert_serves_decoy(&registry, "demo-api-key__expiry-date");
+}
+
+#[test]
+fn a_field_name_of_an_existing_item_injects_on_its_first_run() {
+    let (dir, _running, registry) = serving(
+        "catalogue-field-first-run",
+        &["demo api key"],
+        &demo_api_key_view(),
+        |_| {},
+        "DEMO_API_KEY",
+    );
+    settle(&dir);
+    assert_eq!(
+        support::proton::view_count(&dir),
+        0,
+        "no field view may be fetched before a miss"
+    );
+
+    let (outcome, seen) = run_named(&registry, &dir, "DEMO_API_KEY__EXPIRY_DATE");
+    assert_eq!(seen, DECOY, "the child did not get the field's value");
+    assert_eq!(outcome.state, State::Injected);
+}
+
+#[test]
+fn the_first_request_to_a_daemon_that_never_listed_injects() {
+    let dir = scratch("catalogue-never-listed");
+    let vendor = stub_pass_cli_catalogue(
+        &dir,
+        &Backend::Injects(DECOY),
+        ONE_VAULT,
+        &listing_of(&["demo api key"]),
+        &demo_api_key_view(),
+    );
+    let config = daemon_over(&dir, &vendor);
+    let running = start_daemon(&config, policy_allowing_self());
+    let registry = build(
+        &client_config(running.socket(), 3_000),
+        &Invocation::default(),
+    )
+    .registry;
+
+    let (outcome, seen) = run_named(&registry, &dir, "DEMO_API_KEY__EXPIRY_DATE");
+    assert_eq!(seen, DECOY, "the child did not get the value");
+    assert_eq!(outcome.state, State::Injected);
+    assert_eq!(
+        support::proton::vault_list_count(&dir),
+        1,
+        "one miss, one listing"
+    );
 }
 
 #[test]

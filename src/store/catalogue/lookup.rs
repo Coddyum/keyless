@@ -136,9 +136,9 @@ impl Catalogue {
     /// count of what the store holds. See boundary 2 in the module docs.
     ///
     /// Takes the `route` its caller already computed rather than computing one.
-    /// The miss path decides whether to queue a rebuild off that same verdict,
-    /// so a [`Catalogue::route`] here walks the index a second time for an
-    /// answer already in the caller's hand.
+    /// The miss path already holds that verdict, so a [`Catalogue::route`]
+    /// here walks the index a second time for an answer already in the
+    /// caller's hand.
     ///
     /// A name looked up under a different [`spelling`] is shown with it, so a
     /// caller who typed an item's own title sees which minted form was tried.
