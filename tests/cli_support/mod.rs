@@ -47,7 +47,7 @@ pub fn line_for(stderr: &str, name: &str) -> String {
     stderr
         .lines()
         .find(|line| line.starts_with(&prefix))
-        .unwrap_or_else(|| panic!("no degraded line for `{name}` in: {stderr}"))
+        .unwrap_or_else(|| panic!("no line for `{name}` in: {stderr}"))
         .to_owned()
 }
 

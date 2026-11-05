@@ -143,7 +143,7 @@ impl Resolver {
             // exactly the same thing and differs only in the sentence printed
             // afterwards — `12a3896` changed that sentence, never the ordering,
             // which is why there is no refusal on the session side for this one
-            // to be missing. `tests/daemon.rs` holds that down by watching the
+            // to be missing. `tests/daemon_routing.rs` holds that down by watching the
             // store be asked, because it is not readable from here.
             Resolution::NotFound { .. } => Outcome::Absent,
             Resolution::Failed(errors) => {
@@ -182,10 +182,10 @@ impl Resolver {
                      a session cannot settle which of the daemon's stores a name means",
                     ambiguous.reason()
                 ),
-                // No store was asked, but the daemon's own config was —  and
-                // answered that this name cannot be resolved as configured,
-                // which is a position on the name, not silence about it.
-                kind: FailureKind::Verdict,
+                // No store was asked, so nothing is known about the name; what
+                // answered is the daemon's own config, and its fault is not the
+                // caller's to be refused for.
+                kind: FailureKind::Unrouted,
             },
             // A store declining the name itself is a position on it. The
             // daemon refuses a malformed name before its registry is asked, so

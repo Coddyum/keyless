@@ -38,6 +38,8 @@ pub use executable::{install_executable, install_executable_copy};
 /// verb asking a person need it.
 pub mod terminal;
 
+pub mod always_errors;
+pub mod audit_rows;
 pub mod backend;
 pub mod child_witness;
 pub mod client;

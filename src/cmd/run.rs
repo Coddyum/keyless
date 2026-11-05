@@ -7,14 +7,15 @@
 //! # The invariant
 //!
 //! This function spawns the child on every path where a failure is not the
-//! caller's. There is no early return for a missing store, an unknown name, a
-//! corrupt config, or a backend that errors — each of those sets
+//! caller's. There is no early return for a missing store, a silent store, a
+//! corrupt config, or a backend or daemon that errors — each of those sets
 //! [`State::Degraded`], writes one line to stderr, and continues to the spawn.
 //!
 //! The one deliberate way out without a child is a refused run: a store
-//! declined the request itself — a name no lookup could find, or a caller the
-//! daemon will not serve. That sets [`State::Refused`] and returns
-//! [`EXIT_REFUSED`]; `resolve::fate` decides which verdicts refuse. The other
+//! answered the request, and the answer is that it is wrong — a name the store
+//! does not hold, an empty name, or a caller the daemon will not serve. That
+//! sets [`State::Refused`] and returns [`EXIT_REFUSED`]; `resolve::fate`
+//! decides which verdicts refuse. The other
 //! two are [`RunError::NoCommand`] (nothing was asked for) and
 //! [`RunError::SpawnFailed`] (the command does not exist).
 //!

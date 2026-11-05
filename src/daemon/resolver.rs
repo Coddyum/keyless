@@ -115,6 +115,10 @@ pub enum FailureKind {
     /// renamed it, or declined to be asked because the request itself is
     /// underspecified. Whatever was cached is now known wrong.
     Verdict,
+    /// No store was asked, because this daemon's own config lets several of
+    /// them answer the name and pins none. A fault in the daemon, not a
+    /// position on the name, so a run degrades on it rather than refusing.
+    Unrouted,
 }
 
 impl FailureKind {
@@ -124,6 +128,7 @@ impl FailureKind {
         match self {
             FailureKind::Silent => "store-silent",
             FailureKind::Verdict => "store-verdict",
+            FailureKind::Unrouted => "unrouted",
         }
     }
 }

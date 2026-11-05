@@ -12,8 +12,8 @@
 //! unchanged. A tool that blocks the work gets removed, and then the plaintext
 //! comes back.
 //!
-//! It refuses only a request a store declined on its face: a name it will not
-//! look up at all, or a caller the daemon will not serve. Then the child never
+//! It refuses only a request a store answered: a name the store does not hold,
+//! an empty name, or a caller that fails attestation. Then the child never
 //! starts, because running it without the credential it named fails somewhere
 //! harder to read.
 //!
@@ -21,7 +21,7 @@
 //!
 //! - [`State::Injected`] — every requested name resolved, was injected, and is masked.
 //! - [`State::Degraded`] — a store could not answer. The child runs with an unmodified environment.
-//! - [`State::Refused`] — a store declined the request. The child never starts.
+//! - [`State::Refused`] — a store holds no such name, or declined the request. The child never starts.
 //!
 //! # The verb that does not exist
 //!
@@ -40,8 +40,9 @@
 //! [`attest`] is the decision.
 //!
 //! The boundary does not change the rule above it. A daemon that is absent,
-//! wedged, refusing or slow is a [`State::Degraded`] like any other store
-//! failure, and the child still runs.
+//! wedged, broken or slow is a [`State::Degraded`] like any other store
+//! failure, and the child still runs; a daemon whose store answers that it
+//! holds no such name refuses the run like any other store would.
 //!
 //! # The daemon is macOS-only, and that is a compile-time fact
 //!
@@ -104,10 +105,12 @@ pub enum State {
     /// Every requested name resolved. The child's environment carries them and
     /// its output is masked.
     Injected,
-    /// At least one requested name did not resolve. The child's environment is
-    /// untouched and nothing is masked, because there is nothing to mask.
+    /// At least one requested name got no answer from its store. The child's
+    /// environment is untouched and nothing is masked, because there is
+    /// nothing to mask.
     Degraded,
-    /// A store declined the request for at least one name. No child was started.
+    /// For at least one name, a store answered that it holds no such name or
+    /// declined the request. No child was started.
     Refused,
 }
 

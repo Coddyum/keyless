@@ -18,9 +18,9 @@
 //! value to appear anyway. A degraded run has no local fallback to reach for,
 //! by construction — see `store::build`.
 //!
-//! One case is the exception that marks the boundary: a daemon that answers
-//! and refuses the caller has not failed, so that run is refused, not
-//! degraded.
+//! Two cases mark the boundary: a daemon that refuses the caller, and one
+//! whose store answers that it does not hold the name, have not failed, so
+//! those runs are refused, not degraded.
 
 mod support;
 
@@ -382,14 +382,21 @@ fn a_daemon_whose_store_is_broken_degrades() {
 
 #[cfg(any(target_os = "macos", keyless_force_xnu))]
 #[test]
-fn a_daemon_that_does_not_have_the_name_degrades() {
+fn a_daemon_whose_store_does_not_hold_the_name_refuses_the_run() {
+    // Not a failure either: the store answered, and the answer is that the
+    // name names nothing. Running the command would hand it a missing value
+    // and let it fail somewhere harder to read.
     let dir = scratch("daemon-absentname");
     let config = support::daemon::daemon_config(&dir);
     support::client::write_secrets(&config.stores.file.path, &[("SOMETHING_ELSE", DECOY_VALUE)]);
     let running = support::daemon::start_daemon(&config, support::daemon::policy_allowing_self());
 
     let marker = dir.join("marker");
-    assert_degraded_but_ran("absent name", running.socket(), &marker);
+    let (outcome, notes) = run_against(running.socket(), &marker, 7);
+
+    assert!(!marker.exists(), "the child started: {notes}");
+    assert_eq!(outcome.state, State::Refused, "{notes}");
+    assert_eq!(outcome.exit_code, 64, "{notes}");
 
     drop(running);
     let _ = std::fs::remove_dir_all(&dir);

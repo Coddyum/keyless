@@ -168,29 +168,33 @@ reached and said no, `off` for one you switched off, `blocked` for a name whose
 store failed above it. Colour is a third signal on top of the glyph and the word,
 so `NO_COLOR`, a pipe and a monochrome terminal lose nothing.
 
-**6. Read the one failure that does not look like a failure.**
+**6. Read what a wrong name does, and what a broken store does.**
 
 Ask for a name that does not exist, with a command that would otherwise
 succeed:
 
 ```console
 $ keyless run -s NO_SUCH_NAME -- sh -c 'echo "got [${NO_SUCH_NAME}]"'
-keyless: DEGRADED — 1 names unresolved: NO_SUCH_NAME
-keyless:   NO_SUCH_NAME: not declared in your config, so nothing says where its value lives; no store had one under the name itself. Declare it under "secrets", or write it there with `keyless put`
-got []
+keyless: REFUSED — 1 of 1 names refused; the command was not run
+keyless:   `NO_SUCH_NAME`: not declared in your config, so nothing says where its value lives; no store had one under the name itself. Declare it under "secrets", or write it there with `keyless put`
 $ echo $?
-0
+64
 ```
 
-**Exit 0, with the secret missing.** That is deliberate and it is
-[Rule 1](reference.md#rule-1-it-never-refuses-to-run-your-command): blocking your work gets
-the tool uninstalled, and then the plaintext comes back. The cost is that a
-misconfigured name reaches your program as an unset variable, so what you see
-is your program's own error — a `401`, an empty query, a login page — and not
-this tool's.
+**Exit 64, and your command never ran.** The store answered that it holds no
+such name, so running the command without it would only move the mistake into
+your program's own error — a `401`, an empty query, a login page — where it is
+harder to read. A refusal names the mistake at the name.
 
-**So read stderr on your first run of anything.** `DEGRADED` is the only place
-that failure is ever named. Every line after it belongs to your command.
+A store that *cannot answer* is the opposite case, and that is
+[Rule 1](reference.md#rule-1-it-never-blocks-your-command-on-a-failure): a locked
+keychain, an unreachable vault or a dead daemon prints `DEGRADED`, and your
+command runs anyway with the variable unset, because blocking your work over an
+outage gets the tool uninstalled and then the plaintext comes back.
+
+**So read stderr on your first run of anything.** `REFUSED` and `DEGRADED` are
+the only places either case is ever named. Every line after them belongs to
+your command.
 
 **That message is two facts, and the second one is the fix.** A name your config
 declares says the shorter thing — `not found in any store` — because its

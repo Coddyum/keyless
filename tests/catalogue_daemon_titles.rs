@@ -245,7 +245,7 @@ fn the_first_request_to_a_daemon_that_never_listed_injects() {
 }
 
 #[test]
-fn a_name_nothing_mints_degrades_and_names_the_spelling_it_tried() {
+fn a_name_nothing_mints_is_refused_and_names_the_spelling_it_tried() {
     let (_dir, _running, registry) = serving(
         "catalogue-title-unknown",
         &["decoy-token"],
@@ -256,8 +256,8 @@ fn a_name_nothing_mints_degrades_and_names_the_spelling_it_tried() {
 
     let refused = registry.resolve("no-such-item");
     assert!(
-        matches!(refused, Resolution::Failed(_)),
-        "an unrecognisable name must degrade with an explanation: {}",
+        matches!(refused, Resolution::Refused { .. }),
+        "an unrecognisable name must be refused with an explanation: {}",
         arm(&refused)
     );
     assert!(
