@@ -4,7 +4,7 @@
 use std::io::{self, IsTerminal};
 
 use keyless::audit::AuditLog;
-use keyless::cmd::setup::switch_guards;
+use keyless::cmd::setup::switch::{EXIT_REFUSED, confirm_switch, explain_refusal, switch_guards};
 use keyless::cmd::status::Style;
 use keyless::paths::Paths;
 use keyless::{NAME, State};
@@ -57,26 +57,19 @@ pub(crate) fn confirm_or_refuse(verb: &str, paths: &Paths) -> Option<i32> {
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
-    let confirmation =
-        match keyless::cmd::setup::confirm_switch(verb, interactive, &mut stdin, &mut io::stdout())
-        {
-            Ok(confirmation) => confirmation,
-            Err(error) => {
-                eprintln!("{NAME}: {error}");
-                return Some(1);
-            }
-        };
+    let confirmation = match confirm_switch(verb, interactive, &mut stdin, &mut io::stdout()) {
+        Ok(confirmation) => confirmation,
+        Err(error) => {
+            eprintln!("{NAME}: {error}");
+            return Some(1);
+        }
+    };
     match confirmation {
         Ok(()) => None,
         Err(refusal) => {
-            let _ = keyless::cmd::setup::explain_refusal(verb, refusal, &mut io::stderr());
-            record_switch(
-                paths,
-                verb,
-                refusal.decision(),
-                keyless::cmd::setup::EXIT_REFUSED,
-            );
-            Some(keyless::cmd::setup::EXIT_REFUSED)
+            let _ = explain_refusal(verb, refusal, &mut io::stderr());
+            record_switch(paths, verb, refusal.decision(), EXIT_REFUSED);
+            Some(EXIT_REFUSED)
         }
     }
 }
