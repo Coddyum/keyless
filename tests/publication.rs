@@ -335,6 +335,7 @@ const DECOY_COORDINATES: &[&str] = &[
     "demo",
     "demo-token",
     "keyless",
+    "keyless-proton",
     "kv",
     "other",
     "svc",

@@ -30,11 +30,23 @@ impl Store for ProtonStore {
             return Ok(None);
         };
 
-        self.read(name, &address)
+        let logins = self.logins_so_far();
+        let read = self.read(name, &address);
+        if read.is_err() && self.logged_in_again(logins)? {
+            return self.read(name, &address);
+        }
+        read
     }
 
+    /// [`ProtonStore::check_session`], once more when auto-login brought the
+    /// session back: `doctor` reports what the next `run` would meet.
     fn health(&self) -> Result<(), StoreError> {
-        self.check_session()
+        let logins = self.logins_so_far();
+        let checked = self.check_session();
+        if checked.is_err() && self.logged_in_again(logins)? {
+            return self.check_session();
+        }
+        checked
     }
 }
 
