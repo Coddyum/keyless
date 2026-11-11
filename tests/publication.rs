@@ -337,6 +337,7 @@ const DECOY_COORDINATES: &[&str] = &[
     "keyless",
     "keyless-proton",
     "kv",
+    "my-agent",
     "other",
     "svc",
     // Field labels. Generic by construction: a label copied out of a real item
